@@ -150,7 +150,10 @@ export class TasksClient {
       const selected = selection && (selection.provider || selection.model)
         ? thread.availableModels.find(item => item.provider === selection.provider && item.model === selection.model)
         : thread.defaultModel;
-      const unavailableModel = selected !== undefined && !selected.ready;
+      // Platform deliberately omits both the catalog and default target when
+      // managed inference is unavailable. An explicit selection that no longer
+      // appears in the catalog is unavailable for the same reason.
+      const unavailableModel = selected === undefined || !selected.ready;
       return {
         status: missing || unavailableModel ? "needs_attention" : "accessible", channelId, capabilities, writeAccess: "not_checked",
         nextAction: missing ? "Resolve the reported workspace prerequisites" : unavailableModel

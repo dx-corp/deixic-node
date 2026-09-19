@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Report missing or removed model routes during setup, preserve plain-text
+  account briefs when account names contain structured-output instruction text,
+  and keep rejected credential refreshes from poisoning later requests.
 - Add validated, source-linked account briefs, missing-data handling, progress
   output, explicit owner-authorized approvals/denials, and receipt outcomes.
 - Verify clean package consumers over binary HTTP with killed workers, storage
@@ -9,6 +12,20 @@
 - Atomically publish and sync private checkpoint files before submission.
 - Restore TypeScript 7 builds and classify native fetch disconnects for bounded
   read recovery without retrying task mutations.
+
+## [0.1.4](https://github.com/dx-corp/mono/compare/sdk/deixic/typescript/v0.1.3...sdk/deixic/typescript/v0.1.4) (2026-09-19)
+
+
+### Chores
+
+* **deps:** bump @types/node in /sdk/deixic/typescript ([#9690](https://github.com/dx-corp/mono/issues/9690)) ([868ad56](https://github.com/dx-corp/mono/commit/868ad5655369c716796ebcc60578e7ae515d7b3c))
+
+## [0.1.3](https://github.com/dx-corp/mono/compare/sdk/deixic/typescript/v0.1.2...sdk/deixic/typescript/v0.1.3) (2026-09-19)
+
+
+### Bug Fixes
+
+* **sdk:** harden setup and credential recovery ([#9671](https://github.com/dx-corp/mono/issues/9671)) ([e70ec36](https://github.com/dx-corp/mono/commit/e70ec364d1ebb2669b104ab6e8aee2a2aee57986))
 
 ## [0.1.2](https://github.com/dx-corp/mono/compare/sdk/deixic/typescript/v0.1.1...sdk/deixic/typescript/v0.1.2) (2026-09-18)
 

@@ -1,6 +1,6 @@
 {
   "name": "@evalops/deixic-sdk",
-  "version": "0.1.2",
+  "version": "0.1.4",
   "description": "TypeScript SDK for submitting Deixic tasks, following progress, and resolving approvals",
   "type": "module",
   "sideEffects": false,
@@ -41,7 +41,7 @@
     "@connectrpc/connect-web": "2.2.0"
   },
   "devDependencies": {
-    "@types/node": "^25.6.0",
+    "@types/node": "^26.6.1",
     "typescript": "7.0.2"
   },
   "engines": {
