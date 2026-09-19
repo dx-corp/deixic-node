@@ -104,7 +104,9 @@ async function main() {
         if (values.progress) process.stderr.write(JSON.stringify({ eventId: event.eventId,
           turnId: event.turnId, kind: event.kind }) + "\n");
       } });
-      const structured = task.checkpoint().body.includes(FORMAT_INSTRUCTION);
+      // The instruction is an application-owned suffix. An account name containing
+      // the same text must not change the saved request mode.
+      const structured = task.checkpoint().body.endsWith(FORMAT_INSTRUCTION);
       let brief;
       if (result.status === "completed" && structured) {
         try {

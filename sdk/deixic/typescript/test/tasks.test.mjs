@@ -292,6 +292,17 @@ test("selected ready model is not blocked by unavailable default", async () => {
   assert.equal(report.selectedModel.ready, true);
 });
 
+for (const explicitSelection of [false, true]) test(`setup rejects an absent execution route (${explicitSelection ? "removed selection" : "no default"})`, async () => {
+  const transport = new Transport([create(GetOperatingThreadResponseSchema, {
+    channel: { id: "company" },
+    ...(explicitSelection ? { modelSelection: { provider: "fixture", model: "removed" } } : {}),
+  })]);
+  const report = await client(transport).tasks.checkSetup({ channelId: "company" });
+  assert.equal(report.status, "needs_attention");
+  assert.equal(report.selectedModel, undefined);
+  assert.match(report.nextAction, /model availability/);
+});
+
 test("parser failures propagate without changing completion", async () => {
   const transport = new Transport([acceptance(), finished({ message: { body: "invalid JSON" } })]);
   const result = await (await (await prepare(client(transport))).submit()).result();

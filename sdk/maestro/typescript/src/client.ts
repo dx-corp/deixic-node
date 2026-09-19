@@ -252,10 +252,13 @@ export function createMaestroProductClient(options: MaestroProductClientOptions)
       // regular getCredential() call still rejects a disappeared explicit
       // credential through CredentialIdentity.
       if (!next) return null;
-      const refreshedCredential = identity.check(snapshotCredential(next));
+      const refreshedCredential = snapshotCredential(next);
       if (!refreshedCredential) return null;
+      // Validate without changing the accepted identity. A failed session
+      // verifier must not poison later requests with rejected subject/scope data.
+      identity.validate(refreshedCredential);
       await verifyRefreshIdentity(proof, refreshedCredential);
-      return refreshedCredential;
+      return identity.check(refreshedCredential);
     } catch (error) {
       throw asMaestroProductError(error);
     }
@@ -553,6 +556,24 @@ class CredentialIdentity {
     }
     this.sawCredential = true;
 
+    const claims = this.claims(credential);
+    if (claims.organizationId) this.organizationId = claims.organizationId;
+    if (claims.workspaceId) this.workspaceId = claims.workspaceId;
+    if (claims.subject) this.subject = claims.subject;
+    if (claims.scopes.size > 0 && !this.scopes) this.scopes = claims.scopes;
+    return credential;
+  }
+
+  validate(credential: MaestroProductCredential): void {
+    this.claims(credential);
+  }
+
+  private claims(credential: MaestroProductCredential): {
+    organizationId?: string;
+    workspaceId?: string;
+    subject?: string;
+    scopes: Set<string>;
+  } {
     const organizationId = credential.organizationId?.trim();
     const workspaceId = credential.workspaceId?.trim();
     if (organizationId && organizationId !== this.scope.organizationId) {
@@ -567,9 +588,6 @@ class CredentialIdentity {
     if (this.workspaceId && !workspaceId) {
       throw credentialError("credential refresh removed its declared workspaceId");
     }
-    if (organizationId) this.organizationId = organizationId;
-    if (workspaceId) this.workspaceId = workspaceId;
-
     const subject = credential.subject?.trim();
     if (this.subject && !subject) {
       throw credentialError("credential refresh removed the authenticated subject");
@@ -577,8 +595,6 @@ class CredentialIdentity {
     if (subject && this.subject && subject !== this.subject) {
       throw credentialError("credential refresh changed the authenticated subject");
     }
-    if (subject) this.subject = subject;
-
     const scopes = normalizedScopes(credential.scopes);
     if (this.scopes && scopes.size === 0) {
       throw credentialError("credential refresh removed its declared OAuth scopes");
@@ -588,9 +604,7 @@ class CredentialIdentity {
         throw credentialError("credential refresh changed its declared OAuth scopes");
       }
     }
-    if (scopes.size > 0 && !this.scopes) this.scopes = scopes;
-
-    return credential;
+    return { organizationId, workspaceId, subject, scopes };
   }
 }
 
