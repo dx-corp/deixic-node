@@ -1,0 +1,63 @@
+{
+  "name": "@evalops/deixic-sdk",
+  "version": "0.1.2",
+  "description": "TypeScript SDK for submitting Deixic tasks, following progress, and resolving approvals",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/sdk/deixic/typescript/src/index.js",
+  "types": "./dist/sdk/deixic/typescript/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/sdk/deixic/typescript/src/index.d.ts",
+      "import": "./dist/sdk/deixic/typescript/src/index.js"
+    },
+    "./examples/account-brief": "./examples/account-brief.mjs",
+    "./examples/account-brief-result": {
+      "types": "./examples/account-brief-result.d.mts",
+      "import": "./examples/account-brief-result.mjs"
+    }
+  },
+  "bin": {
+    "deixic-account-brief": "./examples/account-brief.mjs"
+  },
+  "files": [
+    "dist",
+    "examples",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md",
+    "package.json"
+  ],
+  "scripts": {
+    "build": "node ../../maestro/typescript/scripts/verify-descriptor-sources.mjs && rm -rf dist && tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run build && node --test test/*.test.mjs",
+    "check:package": "npm run build && node scripts/check-package-exports.mjs && node scripts/smoke-packed-package.mjs",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "2.15.0",
+    "@connectrpc/connect": "2.2.0",
+    "@connectrpc/connect-web": "2.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "typescript": "7.0.2"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "BUSL-1.1",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dx-corp/deixic-node.git",
+    "directory": "sdk/deixic/typescript"
+  },
+  "homepage": "https://www.deixic.com/developers",
+  "bugs": {
+    "url": "https://github.com/dx-corp/deixic-node/issues"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "paths": {
+      "@bufbuild/protobuf": ["./node_modules/@bufbuild/protobuf/dist/esm/index.d.ts"],
+      "@bufbuild/protobuf/codegenv2": ["./node_modules/@bufbuild/protobuf/dist/esm/codegenv2/index.d.ts"],
+      "@bufbuild/protobuf/wkt": ["./node_modules/@bufbuild/protobuf/dist/esm/wkt/index.d.ts"],
+      "@connectrpc/connect": ["./node_modules/@connectrpc/connect/dist/esm/index.d.ts"],
+      "@connectrpc/connect-web": ["./node_modules/@connectrpc/connect-web/dist/esm/index.d.ts"]
+    },
+    "outDir": "./dist",
+    "rootDir": "../../..",
+    "strict": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true
+  },
+  "include": ["src"],
+  "exclude": ["node_modules", "dist"]
+}
