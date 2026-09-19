@@ -1,0 +1,96 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Verify projection state
+        id: source
+        shell: bash
+        env:
+          PROJECTION_NAME: deixic-node
+          DESTINATION_REPOSITORY: dx-corp/deixic-node
+        run: |
+          set -euo pipefail
+          if [[ ! -f .repository-projection.json ]]; then
+            unexpected="$(git ls-files | grep -Ev '^(README\.md|\.github/workflows/ci\.yml)$' || true)"
+            if [[ -n "$unexpected" ]]; then
+              echo "Projected source is present without .repository-projection.json:" >&2
+              echo "$unexpected" >&2
+              exit 1
+            fi
+            echo "The repository is still in its documented README-only bootstrap state."
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          python3 <<'PY'
+          import json
+          import os
+          import re
+
+          with open(".repository-projection.json", encoding="utf-8") as handle:
+              receipt = json.load(handle)
+          expected_keys = {
+              "schemaVersion", "projection", "projectionSchemaVersion", "sourceRepository",
+              "sourceSha", "destinationRepository", "priorProjectedBase", "definitionDigest",
+              "toolDigest", "contentDigest", "publicationEligible",
+          }
+          assert set(receipt) == expected_keys, "projection provenance fields changed"
+          assert receipt["schemaVersion"] == 1 and receipt["projectionSchemaVersion"] == 1
+          assert receipt["projection"] == os.environ["PROJECTION_NAME"]
+          assert receipt["sourceRepository"] == "dx-corp/mono"
+          assert receipt["destinationRepository"] == os.environ["DESTINATION_REPOSITORY"]
+          assert re.fullmatch(r"[0-9a-f]{40}", receipt["sourceSha"])
+          assert re.fullmatch(r"[0-9a-f]{40}", receipt["priorProjectedBase"])
+          for key in ("definitionDigest", "toolDigest", "contentDigest"):
+              assert re.fullmatch(r"[0-9a-f]{64}", receipt[key]), key
+          assert receipt["publicationEligible"] is True
+          PY
+
+          for required in sdk/deixic/typescript/package.json sdk/deixic/typescript/package-lock.json gen/ts/deixic/v1/deixic_pb.ts sdk/maestro/typescript/src/client.ts; do
+            test -f "$required" || { echo "Missing projected input: $required" >&2; exit 1; }
+          done
+          echo "present=true" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Node.js
+        if: steps.source.outputs.present == 'true'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.23.1
+
+      - name: Verify public package boundary
+        if: steps.source.outputs.present == 'true'
+        shell: bash
+        working-directory: sdk/deixic/typescript
+        run: |
+          set -euo pipefail
+          if grep -Eq 'workspace:|file:|github\.com/dx-corp/mono' package.json package-lock.json; then
+            echo "The package has a workspace, local-file, or private source dependency" >&2
+            exit 1
+          fi
+          grep -Fq 'https://github.com/dx-corp/deixic-node' package.json
+
+      - name: Install, typecheck, and test package
+        if: steps.source.outputs.present == 'true'
+        shell: bash
+        working-directory: sdk/deixic/typescript
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run typecheck
+          npm test
+          npm run check:package
