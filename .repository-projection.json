@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "projection": "deixic-node",
+  "projectionSchemaVersion": 1,
+  "sourceRepository": "dx-corp/mono",
+  "sourceSha": "6878323651fdb771b8cbf76b08597b930938ce36",
+  "destinationRepository": "dx-corp/deixic-node",
+  "priorProjectedBase": "719e1aaa7fe71953c062b9b9289f5dcd2cc0dda0",
+  "definitionDigest": "b99cd0d6cec87a63b0afb20675fe7e136c5ae1271839ecae5a304dc5f58f840f",
+  "toolDigest": "16fcaea2f0e7e35de09bcd8e515d915f65cdf1eb13033eaf2845f60eaa9e0a4f",
+  "contentDigest": "8ce12aed18ab40e38e6af97fc4f651010cb4875b0eba95c56881a15caea1302c",
+  "publicationEligible": true
+}
