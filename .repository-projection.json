@@ -3,7 +3,7 @@
   "projection": "deixic-node",
   "projectionSchemaVersion": 1,
   "sourceRepository": "dx-corp/mono",
-  "sourceSha": "cc1e1c0a42519977b42d956cc61e4624197a33e8",
+  "sourceSha": "9b559bc70e7d8afc723d2ac67c8c62fe0cfbdeeb",
   "destinationRepository": "dx-corp/deixic-node",
   "priorProjectedBase": "2106d21c0add2f024f580836310b18f5c1f46df5",
   "definitionDigest": "6c8bda5a9e80c50ccdc2d79d85f61b7f2373eb695dcc86f51f6240901cdf3c28",
