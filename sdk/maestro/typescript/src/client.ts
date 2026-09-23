@@ -9,6 +9,8 @@ import { createClient, type Transport } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
 import {
   AssessComplianceSubjectRequestSchema,
+  GetComplianceAssessmentRequestSchema,
+  RecordComplianceAssessmentRequestSchema,
   CodingAcceptanceContractSchema,
   ConsoleQuerySchema,
   GetOperatingReceiptRequestSchema,
@@ -33,6 +35,8 @@ import {
   WatchOperatingThreadResponseSchema,
   type GetOperatingReceiptResponse,
   type AssessComplianceSubjectResponse,
+  type GetComplianceAssessmentResponse,
+  type RecordComplianceAssessmentResponse,
   type GetOperatingThreadResponse,
   type InterruptOperatingThreadResponse,
   type ListOperatingThreadEventsResponse,
@@ -178,6 +182,15 @@ export interface MaestroAssessComplianceInput {
   signal?: AbortSignal;
 }
 
+export interface MaestroRecordComplianceInput extends MaestroAssessComplianceInput {
+  idempotencyKey: string;
+}
+
+export interface MaestroGetComplianceInput {
+  recordId: string;
+  signal?: AbortSignal;
+}
+
 export interface MaestroResolveReceiptInput {
   receiptId: string;
   /** Exact action object returned in receipt.allowedActions. */
@@ -194,6 +207,8 @@ export interface MaestroProductClient {
   readonly scope: Readonly<MaestroProductScope>;
   compliance: {
     assess(input: MaestroAssessComplianceInput): Promise<AssessComplianceSubjectResponse>;
+    record(input: MaestroRecordComplianceInput): Promise<RecordComplianceAssessmentResponse>;
+    get(input: MaestroGetComplianceInput): Promise<GetComplianceAssessmentResponse>;
   };
   threads: {
     get(input: MaestroGetThreadInput): Promise<GetOperatingThreadResponse>;
@@ -394,6 +409,31 @@ export function createMaestroProductClient(options: MaestroProductClientOptions)
           subjectId: required(input.subjectId, "subjectId"),
         });
         return unary((requestHeaders) => client.assessComplianceSubject(request, {
+          headers: requestHeaders,
+          signal: input.signal,
+        }));
+      },
+      record(input) {
+        const request = snapshotRequest(RecordComplianceAssessmentRequestSchema, {
+          organizationId: scope.organizationId,
+          workspaceId: scope.workspaceId,
+          profileId: input.profileId,
+          subjectKind: input.subjectKind,
+          subjectId: required(input.subjectId, "subjectId"),
+          idempotencyKey: required(input.idempotencyKey, "idempotencyKey"),
+        });
+        return unary((requestHeaders) => client.recordComplianceAssessment(request, {
+          headers: requestHeaders,
+          signal: input.signal,
+        }));
+      },
+      get(input) {
+        const request = snapshotRequest(GetComplianceAssessmentRequestSchema, {
+          organizationId: scope.organizationId,
+          workspaceId: scope.workspaceId,
+          recordId: required(input.recordId, "recordId"),
+        });
+        return unary((requestHeaders) => client.getComplianceAssessment(request, {
           headers: requestHeaders,
           signal: input.signal,
         }));

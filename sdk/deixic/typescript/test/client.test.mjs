@@ -4,6 +4,8 @@ import test from "node:test";
 import { create } from "@bufbuild/protobuf";
 import {
   AssessComplianceSubjectResponseSchema,
+  GetComplianceAssessmentResponseSchema,
+  RecordComplianceAssessmentResponseSchema,
   GetOperatingThreadResponseSchema,
   SubmitOperatingMessageResponseSchema,
 } from "../dist/gen/ts/console/v1/console_pb.js";
@@ -58,6 +60,29 @@ test("compliance assessments use the fixed tenant and a typed Deixic RPC", async
   assert.equal(transport.calls[0].input.organizationId, "org-a");
   assert.equal(transport.calls[0].input.workspaceId, "workspace-a");
   assert.equal(transport.calls[0].input.subjectId, "execution-1");
+});
+
+test("compliance records bind tenant and replay key through typed RPCs", async () => {
+  const transport = new RecordingTransport(({ method }) => create(
+    method.name === "RecordComplianceAssessment"
+      ? RecordComplianceAssessmentResponseSchema : GetComplianceAssessmentResponseSchema,
+    { record: { id: "ca_1" } },
+  ));
+  const deixic = createDeixicClient({
+    organizationId: "org-a", workspaceId: "workspace-a", apiKey: "sdk-test-key", transport,
+  });
+  await deixic.compliance.record({
+    profileId: "dex-production-action-assurance/v1", subjectKind: "tool_execution",
+    subjectId: "execution-1", idempotencyKey: "snapshot-1",
+  });
+  await deixic.compliance.get({ recordId: "ca_1" });
+  assert.deepEqual(transport.calls.map(({ method }) => method.name), [
+    "RecordComplianceAssessment", "GetComplianceAssessment",
+  ]);
+  assert.equal(transport.calls[0].input.organizationId, "org-a");
+  assert.equal(transport.calls[0].input.workspaceId, "workspace-a");
+  assert.equal(transport.calls[0].input.idempotencyKey, "snapshot-1");
+  assert.equal(transport.calls[1].input.recordId, "ca_1");
 });
 
 test("public client fixes tenant scope and sends an API key as a bearer", async () => {

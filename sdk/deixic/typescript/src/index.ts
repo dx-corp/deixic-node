@@ -135,6 +135,8 @@ export type {
 export type {
   MaestroGetReceiptInput as GetReceiptInput,
   MaestroAssessComplianceInput as AssessComplianceInput,
+  MaestroRecordComplianceInput as RecordComplianceInput,
+  MaestroGetComplianceInput as GetComplianceInput,
   MaestroGetThreadInput as GetThreadInput,
   MaestroInterruptThreadInput as InterruptThreadInput,
   MaestroListThreadEventsInput as ListThreadEventsInput,
@@ -157,8 +159,11 @@ export {
 
 export type {
   AssessComplianceSubjectResponse,
+  ComplianceAssessmentRecord,
   ComplianceSubjectAssessment,
   ComplianceRequirementFinding,
+  GetComplianceAssessmentResponse,
+  RecordComplianceAssessmentResponse,
   GetOperatingReceiptResponse,
   GetOperatingThreadResponse,
   InterruptOperatingThreadResponse,
