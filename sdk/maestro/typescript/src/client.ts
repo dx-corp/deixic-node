@@ -8,6 +8,7 @@ import {
 import { createClient, type Transport } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
 import {
+  AssessComplianceSubjectRequestSchema,
   CodingAcceptanceContractSchema,
   ConsoleQuerySchema,
   GetOperatingReceiptRequestSchema,
@@ -31,6 +32,7 @@ import {
   WatchOperatingThreadRequestSchema,
   WatchOperatingThreadResponseSchema,
   type GetOperatingReceiptResponse,
+  type AssessComplianceSubjectResponse,
   type GetOperatingThreadResponse,
   type InterruptOperatingThreadResponse,
   type ListOperatingThreadEventsResponse,
@@ -169,6 +171,13 @@ export interface MaestroGetReceiptInput {
   signal?: AbortSignal;
 }
 
+export interface MaestroAssessComplianceInput {
+  profileId: "dex-production-action-assurance/v1";
+  subjectKind: "tool_execution";
+  subjectId: string;
+  signal?: AbortSignal;
+}
+
 export interface MaestroResolveReceiptInput {
   receiptId: string;
   /** Exact action object returned in receipt.allowedActions. */
@@ -183,6 +192,9 @@ export interface MaestroResolveReceiptInput {
  */
 export interface MaestroProductClient {
   readonly scope: Readonly<MaestroProductScope>;
+  compliance: {
+    assess(input: MaestroAssessComplianceInput): Promise<AssessComplianceSubjectResponse>;
+  };
   threads: {
     get(input: MaestroGetThreadInput): Promise<GetOperatingThreadResponse>;
   };
@@ -372,6 +384,21 @@ export function createMaestroProductClient(options: MaestroProductClientOptions)
 
   return {
     scope,
+    compliance: {
+      assess(input) {
+        const request = snapshotRequest(AssessComplianceSubjectRequestSchema, {
+          organizationId: scope.organizationId,
+          workspaceId: scope.workspaceId,
+          profileId: input.profileId,
+          subjectKind: input.subjectKind,
+          subjectId: required(input.subjectId, "subjectId"),
+        });
+        return unary((requestHeaders) => client.assessComplianceSubject(request, {
+          headers: requestHeaders,
+          signal: input.signal,
+        }));
+      },
+    },
     threads: {
       get(input) {
         const limit = readLimit(input.limit);

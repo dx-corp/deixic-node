@@ -134,6 +134,7 @@ export type {
 
 export type {
   MaestroGetReceiptInput as GetReceiptInput,
+  MaestroAssessComplianceInput as AssessComplianceInput,
   MaestroGetThreadInput as GetThreadInput,
   MaestroInterruptThreadInput as InterruptThreadInput,
   MaestroListThreadEventsInput as ListThreadEventsInput,
@@ -146,6 +147,7 @@ export type {
 } from "../../../maestro/typescript/src/client.js";
 
 export {
+  ComplianceFindingStatus,
   OperatingThreadRequestType,
   OperatingThreadResponseAction,
   OperatingThreadWaitingReason,
@@ -154,6 +156,9 @@ export {
 } from "../../../../gen/ts/console/v1/console_pb.js";
 
 export type {
+  AssessComplianceSubjectResponse,
+  ComplianceSubjectAssessment,
+  ComplianceRequirementFinding,
   GetOperatingReceiptResponse,
   GetOperatingThreadResponse,
   InterruptOperatingThreadResponse,
