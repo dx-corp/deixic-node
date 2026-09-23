@@ -45,6 +45,32 @@ and retrieves the final answer linked to that accepted turn, together with
 its referenced receipts. The lower-level `observeAcceptedTurn` helper remains
 available for callers that own their streaming policy.
 
+## Compliance assessments
+
+`deixic.compliance.assess()` evaluates a versioned control against a record
+fetched from its owning service under the client's fixed organization and
+workspace:
+
+```ts
+const { assessment } = await deixic.compliance.assess({
+  profileId: "dex-production-action-assurance/v1",
+  subjectKind: "tool_execution",
+  subjectId: "tex_123",
+});
+```
+
+The response names each requirement, its `ComplianceFindingStatus` value,
+a reason code and the owner reference. The first profile tags findings with
+the internal `DEX-ACTION-ASSURANCE` control; mapping that control to an
+external framework requires a separately reviewed mapping. Denied actions are `NOT_APPLICABLE`;
+executions without a confirmed succeeded state are `INDETERMINATE`. It includes a
+digest of the exact Tool Execution returned by the owner and declares coverage
+of one requested record. This is a live read; store the result in your own
+system if you need to retain that observation. The current profile reports
+the independent Audit receipt as indeterminate because Tool Executor has no
+general Audit sink. Do not treat the result as proof of an external state
+change or of every action in a time window.
+
 ## Task handles and setup checks
 
 `await deixic.tasks.checkSetup({ channelId: "company" })` makes one read
@@ -93,7 +119,7 @@ owner-resolved lifecycle and evidence for those actions.
 Use a workspace with connected CRM data and a policy that permits only CRM
 reads for this workflow. The SDK creates no connector, grant or model route.
 The example asks for a summary, open opportunities, risks and source references;
-Platform enforces the workspace's access and action policy.
+Platform enforces the access and action policy for the workspace.
 
 Set `DEIXIC_API_KEY`, `DEIXIC_ORGANIZATION_ID`, and `DEIXIC_WORKSPACE_ID` from
 your workspace. `DEIXIC_BASE_URL` defaults to `https://app.deixic.com`.
@@ -113,12 +139,10 @@ exit code 2 for unfinished work or work that needs attention. If acceptance was
 lost, explicitly run `replay account-brief.json`, then resume. A new `start`
 refuses an existing checkpoint path. The same file can be resumed by the
 Python account-brief example with the same tenant and origin.
-
-
 Add `--structured` to `start` to request the versioned JSON brief and validate
 facts against its declared source IDs. A restarted worker remembers the saved
-format. `resume --progress` writes matching event IDs to stderr and the final
-JSON to stdout. Missing CRM data is explicit; malformed results return exit 2
+format. `resume --progress` writes matching event IDs to standard error and the final
+JSON to standard output. Missing CRM data is explicit; malformed results return exit 2
 with `invalid_result`, without another submission. Receipt owner, object,
 lifecycle and evidence references appear separately in `actions`. A completed
 answer with a failed or unavailable receipt still returns exit 2.
@@ -129,7 +153,7 @@ Platform checks the operator's authorization. Observation never approves work.
 See the [complete application guide](https://www.deixic.com/developers/sdk/account-brief)
 for the trigger/worker integration, result format, approval decisions, receipt
 interpretation and tested recovery cases. The private-file storage example
-requires a POSIX filesystem supporting atomic rename, hard links and fsync;
+requires a POSIX filesystem supporting atomic rename, hard links and `fsync()`;
 hosted applications use their existing durable storage and job queue.
 
 ## Authentication and tenant scope
@@ -163,10 +187,10 @@ Mutation methods do not retry unavailable or transport failures. Task
 observation has the bounded read recovery described above.
 
 Browser applications should keep API keys out of browser code. Use a
-same-origin authenticated backend, or a credential source backed by the
+same-origin authenticated server, or a credential source backed by the
 application's OAuth session.
 
-## Idempotency and recovery
+## Request replay and recovery
 
 Every mutation requires a caller-owned `idempotencyKey`. The SDK never invents
 or replaces one. Keep the same key when the application intentionally resumes

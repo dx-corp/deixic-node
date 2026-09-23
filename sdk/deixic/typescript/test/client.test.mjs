@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { create } from "@bufbuild/protobuf";
 import {
+  AssessComplianceSubjectResponseSchema,
   GetOperatingThreadResponseSchema,
   SubmitOperatingMessageResponseSchema,
 } from "../dist/gen/ts/console/v1/console_pb.js";
@@ -39,6 +40,25 @@ class RecordingTransport {
     throw new Error("unexpected stream");
   }
 }
+
+test("compliance assessments use the fixed tenant and a typed Deixic RPC", async () => {
+  const transport = new RecordingTransport(() => create(AssessComplianceSubjectResponseSchema, {
+    assessment: { profileId: "dex-production-action-assurance/v1", inspectedCount: 1, expectedCount: 1 },
+  }));
+  const deixic = createDeixicClient({
+    organizationId: "org-a", workspaceId: "workspace-a", apiKey: "sdk-test-key", transport,
+  });
+  const response = await deixic.compliance.assess({
+    profileId: "dex-production-action-assurance/v1",
+    subjectKind: "tool_execution", subjectId: "execution-1",
+  });
+  assert.equal(response.assessment?.inspectedCount, 1);
+  assert.equal(transport.calls[0].method.name, "AssessComplianceSubject");
+  assert.equal(transport.calls[0].method.parent.typeName, "deixic.v1.DeixicService");
+  assert.equal(transport.calls[0].input.organizationId, "org-a");
+  assert.equal(transport.calls[0].input.workspaceId, "workspace-a");
+  assert.equal(transport.calls[0].input.subjectId, "execution-1");
+});
 
 test("public client fixes tenant scope and sends an API key as a bearer", async () => {
   const transport = new RecordingTransport(() => create(SubmitOperatingMessageResponseSchema, {
