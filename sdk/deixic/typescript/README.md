@@ -65,8 +65,10 @@ the internal `DEX-ACTION-ASSURANCE` control; mapping that control to an
 external framework requires a separately reviewed mapping. Denied actions are `NOT_APPLICABLE`;
 executions without a confirmed succeeded state are `INDETERMINATE`. It includes a
 digest of the exact Tool Execution returned by the owner and declares coverage
-of one requested record. This is a live read; store the result in your own
-system if you need to retain that observation. The current profile reports
+of one requested record. This is a live read. To retain a server-owned
+snapshot, call `deixic.compliance.record()` with the same subject and an
+`idempotencyKey`, then retrieve its `record.id` with `deixic.compliance.get()`.
+Repeating the key returns the first accepted snapshot. The current profile reports
 the independent Audit receipt as indeterminate because Tool Executor has no
 general Audit sink. Do not treat the result as proof of an external state
 change or of every action in a time window.
