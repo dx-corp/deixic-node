@@ -106,3 +106,13 @@ jobs:
           npm run typecheck
           npm test
           npm run check:package
+
+      - name: Audit packed public descriptor closure
+        if: steps.source.outputs.present == 'true'
+        shell: bash
+        working-directory: sdk/deixic/typescript
+        run: |
+          set -euo pipefail
+          npm pack --ignore-scripts --json > "$RUNNER_TEMP/deixic-pack.json"
+          file="$(jq -r '.[0].filename' "$RUNNER_TEMP/deixic-pack.json")"
+          node ../../../.github/scripts/audit-public-package.mjs "$file" .
