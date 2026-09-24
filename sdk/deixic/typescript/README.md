@@ -3,6 +3,8 @@
 `@evalops/deixic-sdk` is the supported TypeScript client for applications that
 submit Deixic tasks, follow durable progress, interrupt work, and approve or
 deny requested actions. Its top-level client exposes those supported methods.
+Generated public wire types are available from the explicit
+`@evalops/deixic-sdk/protocol` subpath when an application needs them.
 
 ## Install
 

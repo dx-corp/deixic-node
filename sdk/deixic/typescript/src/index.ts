@@ -162,5 +162,3 @@ export {
   OperatingTurnState,
   ReceiptLifecycleState,
 } from "./protocol.js";
-
-export * from "./protocol.js";
