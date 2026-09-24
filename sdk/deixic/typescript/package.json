@@ -11,6 +11,10 @@
       "types": "./dist/sdk/deixic/typescript/src/index.d.ts",
       "import": "./dist/sdk/deixic/typescript/src/index.js"
     },
+    "./protocol": {
+      "types": "./dist/sdk/deixic/typescript/src/protocol.d.ts",
+      "import": "./dist/sdk/deixic/typescript/src/protocol.js"
+    },
     "./examples/account-brief": "./examples/account-brief.mjs",
     "./examples/account-brief-result": {
       "types": "./examples/account-brief-result.d.mts",

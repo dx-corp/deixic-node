@@ -11,6 +11,11 @@ assert.equal(manifest.main, entry);
 assert.equal(manifest.exports["."].types, entry.replace(/\.js$/, ".d.ts"));
 await access(resolve(root, entry));
 await access(resolve(root, manifest.exports["."].types));
+const protocolEntry = "./dist/sdk/deixic/typescript/src/protocol.js";
+assert.equal(manifest.exports["./protocol"].import, protocolEntry);
+assert.equal(manifest.exports["./protocol"].types, protocolEntry.replace(/\.js$/, ".d.ts"));
+await access(resolve(root, protocolEntry));
+await access(resolve(root, manifest.exports["./protocol"].types));
 
 const dependencies = new Set(Object.keys(manifest.dependencies ?? {}));
 let checked = 0;

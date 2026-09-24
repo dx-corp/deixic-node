@@ -45,11 +45,17 @@ try {
   ));
   assert.equal(installed.name, "@evalops/deixic-sdk");
   assert.equal(installed.exports["."].import, "./dist/sdk/deixic/typescript/src/index.js");
+  assert.equal(installed.exports["./protocol"].import, "./dist/sdk/deixic/typescript/src/protocol.js");
 
   await writeFile(resolve(consumer, "smoke.mjs"), `
 import assert from "node:assert/strict";
 import { create } from "@bufbuild/protobuf";
+import * as sdk from "@evalops/deixic-sdk";
 import { createDeixicClient, OperatingTurnState } from "@evalops/deixic-sdk";
+import { file_deixicpublic_v1_sdk } from "@evalops/deixic-sdk/protocol";
+assert(!("file_deixicpublic_v1_sdk" in sdk));
+assert(!("ConsoleQuerySchema" in sdk));
+assert.equal(file_deixicpublic_v1_sdk.proto.package, "deixicpublic.v1");
 assert.equal(typeof OperatingTurnState, "object");
 let calls = 0;
 let completed = false;
@@ -102,9 +108,12 @@ assert.equal(task.checkpoint().cursor, "9007199254740993");
 
   await writeFile(resolve(consumer, "smoke.ts"), `
 import { createDeixicClient, parseTaskResult, type DeixicClient, type GetThreadInput, type TaskCheckpoint, type TaskResult } from "@evalops/deixic-sdk";
+import type { TaskTurn } from "@evalops/deixic-sdk/protocol";
 import { parseAccountBrief, type AccountBrief } from "@evalops/deixic-sdk/examples/account-brief-result";
 const parse: (body: string) => AccountBrief = parseAccountBrief;
 void parse;
+const turn: TaskTurn | undefined = undefined;
+void turn;
 const input: GetThreadInput = { channelId: "channel", offset: 0 };
 const client: DeixicClient = createDeixicClient({
   apiKey: "test-key",
