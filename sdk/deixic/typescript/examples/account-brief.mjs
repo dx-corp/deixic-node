@@ -61,7 +61,7 @@ async function main() {
       writeAccess: check.writeAccess, nextAction: check.nextAction,
       requirements: check.capabilities.map(item => ({ service: item.service,
         missingRequirements: item.missingRequirements,
-        reasonCodes: item.missingRequirementStates.map(reason => reason.reasonCode) })),
+        accessible: item.accessible })),
       modelReady: check.selectedModel?.ready ?? null, errorKind: check.error?.kind,
       requestId: check.error?.requestId,
     }));
@@ -86,13 +86,13 @@ async function main() {
     else if (["approve", "deny"].includes(action)) {
       const result = await task.result();
       const event = result.event;
-      if (result.status !== "waiting" || !event || event.requestType !== OperatingThreadRequestType.APPROVAL
+      if (result.status !== "waiting" || !event || event.requestKind !== OperatingThreadRequestType.APPROVAL
         || event.requestId !== values.request) {
         console.log(JSON.stringify({ status: "needs_attention", reason: "approval_request_not_current" }));
         return 2;
       }
       await client.controls.respond({ channelId: task.checkpoint().channelId, turnId: result.turnId,
-        response: { requestId: event.requestId, callId: event.requestCallId, requestType: event.requestType,
+        response: { requestId: event.requestId, callId: event.callId, requestKind: event.requestKind,
           action: action === "approve" ? OperatingThreadResponseAction.APPROVE : OperatingThreadResponseAction.DENY },
         idempotencyKey: values["decision-key"],
       });
@@ -121,15 +121,15 @@ async function main() {
         }
       }
       const receipts = result.status === "completed" ? result.receipts : [];
-      const actions = receipts.map(item => ({ id: item.id, ownerService: item.ownerService,
-        objectId: item.objectId, kind: item.kind, lifecycleState: item.lifecycleState,
-        evidenceRefs: item.evidenceRefs.map(ref => ({ resourceType: ref.resourceType, id: ref.id })) }));
-      const attention = receipts.some(item => ![ReceiptLifecycleState.SUCCEEDED, ReceiptLifecycleState.VERIFIED].includes(item.lifecycleState));
+      const actions = receipts.map(item => ({ id: item.id, ownerService: undefined,
+        objectId: undefined, kind: item.kind, lifecycleState: item.state,
+        evidenceRefs: item.evidence.map(ref => ({ resourceType: ref.kind, id: ref.id })) }));
+      const attention = receipts.some(item => ![ReceiptLifecycleState.SUCCEEDED, ReceiptLifecycleState.VERIFIED].includes(item.state));
       console.log(JSON.stringify({ status: result.status, turnId: result.turnId,
         reason: result.reason, body: result.status === "completed" && !structured ? result.body : undefined,
         brief, receiptIds: receipts.map(item => item.id), actions,
         actionStatus: !actions.length ? "not_reported" : attention ? "requires_attention" : "owner_reported_success",
-        requestId: result.event?.requestId, requestType: result.event?.requestType, errorCode: result.turn?.errorCode,
+        requestId: result.event?.requestId, requestKind: result.event?.requestKind, errorCode: result.turn?.terminalError?.code,
       }));
       return result.status === "completed" && !attention ? 0 : 2;
     }

@@ -3,23 +3,23 @@ import test from "node:test";
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError } from "@connectrpc/connect";
 import {
-  GetOperatingThreadResponseSchema, GetOperatingReceiptResponseSchema,
-  SubmitOperatingMessageResponseSchema, ListOperatingThreadEventsResponseSchema,
+  GetThreadResponseSchema, GetReceiptResponseSchema,
+  SubmitTaskResponseSchema, ListEventsResponseSchema,
   OperatingTurnState, OperatingThreadEventKind, OperatingThreadRequestType,
   OperatingThreadWaitingReason,
-} from "../dist/gen/ts/console/v1/console_pb.js";
+} from "../dist/sdk/deixic/typescript/src/protocol.js";
 import { createDeixicClient, DeixicError, parseTaskResult } from "../dist/sdk/deixic/typescript/src/index.js";
 
 const C = 9_007_199_254_740_994n;
-const acceptance = () => create(SubmitOperatingMessageResponseSchema, {
-  replayCursor: C, acceptedTurn: { turnId: "target", sequence: 2n, state: OperatingTurnState.QUEUED },
+const acceptance = () => create(SubmitTaskResponseSchema, {
+  replayCursor: C, acceptedTurn: { turnId: "target", sequence: 2n, state: OperatingTurnState.ACCEPTED },
 });
-const finished = (options = {}) => create(GetOperatingThreadResponseSchema, {
-  channel: { id: "company" },
+const finished = (options = {}) => create(GetThreadResponseSchema, {
+  thread: { id: "company" },
   turns: [{ turnId: "target", sequence: 2n, state: OperatingTurnState.COMPLETED, assistantMessageId: "answer", ...options.turn }],
-  messages: [{ id: "answer", channelId: "company", role: "assistant", body: "Account brief", ...options.message }],
+  messages: [{ id: "answer", channelId: "company", role: 2, body: "Account brief", ...options.message }],
 });
-const page = (options = {}) => create(ListOperatingThreadEventsResponseSchema, { nextCursor: C, ...options });
+const page = (options = {}) => create(ListEventsResponseSchema, { nextCursor: C, ...options });
 
 class Transport {
   calls = [];
@@ -68,7 +68,7 @@ test("completed result fetches exact linked answer and receipts across pages", a
   const second = finished({ message: { receiptIds: ["evidence"] } });
   second.turns = [];
   const transport = new Transport([acceptance(), first, second,
-    create(GetOperatingReceiptResponseSchema, { receipt: { id: "evidence" } })]);
+    create(GetReceiptResponseSchema, { receipt: { id: "evidence" } })]);
   const result = await (await prepare(client(transport))).submit().then(task => task.result());
   assert.equal(result.status, "completed");
   assert.equal(result.body, "Account brief");
@@ -93,7 +93,7 @@ test("resume rejects tenant/origin changes and unsafe checkpoint coordinates", a
 
 test("retention reset uses owner execution cursor and ignores reset events", async () => {
   const transport = new Transport([acceptance(), page({ resetRequired: true, nextCursor: C + 9n,
-    threadExecution: { replayCursor: C + 2n },
+    snapshot: { replayCursor: C + 2n },
     events: [{ cursor: C + 9n, turnId: "target", kind: OperatingThreadEventKind.TURN_COMPLETED }],
   }), finished()]);
   const task = await (await prepare(client(transport))).submit();
@@ -108,19 +108,19 @@ test("reconnection retries observation without resubmission", async () => {
   const task = await (await prepare(client(transport))).submit();
   assert.equal((await task.wait({ pollIntervalMs: 1 })).status, "completed");
   assert.deepEqual(transport.calls.map(item => item.method), [
-    "SubmitOperatingMessage", "ListOperatingThreadEvents", "ListOperatingThreadEvents", "GetOperatingThread",
+    "SubmitTask", "ListEvents", "ListEvents", "GetThread",
   ]);
 });
 
 test("progress includes only new matching events and detaches callback data", async () => {
-  const own = { cursor: C + 2n, turnId: "target", eventId: "own", kind: OperatingThreadEventKind.PROGRESS };
+  const own = { cursor: C + 2n, turnId: "target", id: "own", kind: OperatingThreadEventKind.PROGRESS };
   const transport = new Transport([acceptance(), page({ nextCursor: C + 2n, events: [
     { cursor: C + 1n, turnId: "other", kind: OperatingThreadEventKind.TURN_COMPLETED }, own, own,
   ] }), finished()]);
   const task = await (await prepare(client(transport))).submit();
   const events = [];
   const result = await task.wait({ onEvent(event) {
-    events.push(event.eventId);
+    events.push(event.id);
     assert.throws(() => { event.turnId = "forged"; }, TypeError);
   } });
   assert.deepEqual(events, ["own"]);
@@ -133,8 +133,8 @@ test("pending approval request recovers from owner history after restart", async
   const saved = (await (await prepare(client(original))).submit()).checkpoint();
   const transport = new Transport([
     finished({ turn: { state: OperatingTurnState.WAITING, waitingReason: OperatingThreadWaitingReason.APPROVAL, firstCursor: C - 3n } }),
-    page({ nextCursor: C - 1n, events: [{ cursor: C - 1n, turnId: "target", eventId: "approval",
-      kind: OperatingThreadEventKind.APPROVAL_REQUIRED, requestId: "approval-1", requestType: OperatingThreadRequestType.APPROVAL }] }),
+    page({ nextCursor: C - 1n, events: [{ cursor: C - 1n, turnId: "target", id: "approval",
+      kind: OperatingThreadEventKind.APPROVAL_REQUIRED, requestId: "approval-1", requestKind: OperatingThreadRequestType.APPROVAL }] }),
   ]);
   const result = await client(transport).tasks.resume(saved).result();
   assert.equal(result.status, "waiting");
@@ -159,10 +159,10 @@ for (const bad of ["sequence", "message_id", "role", "channel", "receipt"]) {
     if (bad === "sequence") result.turns[0].sequence = 3n;
     if (bad === "message_id") result.turns[0].assistantMessageId = "missing";
     if (bad === "role") result.messages[0].role = "user";
-    if (bad === "channel") result.messages[0].channelId = "other";
+    if (bad === "channel") result.thread.id = "other";
     if (bad === "receipt") {
       result.messages[0].receiptIds = ["requested"];
-      tail.push(create(GetOperatingReceiptResponseSchema, { receipt: { id: "wrong" } }));
+      tail.push(create(GetReceiptResponseSchema, { receipt: { id: "wrong" } }));
     }
     const transport = new Transport([acceptance(), result, ...tail]);
     const task = await (await prepare(client(transport))).submit();
@@ -190,7 +190,7 @@ test("storage failure prevents submission; application errors are never retried"
   assert.equal(transport.calls.length, 0);
 
   const observing = new Transport([acceptance(), page({ nextCursor: C + 1n,
-    events: [{ cursor: C + 1n, turnId: "target", eventId: "own" }] })]);
+    events: [{ cursor: C + 1n, turnId: "target", id: "own" }] })]);
   const observed = await (await prepare(client(observing))).submit();
   const failure = new DeixicError({ message: "application failure", kind: "transport" });
   await assert.rejects(observed.wait({ onEvent() { throw failure; } }), error => error === failure);
@@ -223,7 +223,7 @@ for (const [name, options] of [
   ["skipped events", { nextCursor: C + 2n }], ["stalled pagination", { hasMore: true }],
   ["missing reset cursor", { resetRequired: true }],
   ["conflicting events", { nextCursor: C + 1n, events: [
-    { cursor: C + 1n, turnId: "target", eventId: "a" }, { cursor: C + 1n, turnId: "target", eventId: "b" },
+    { cursor: C + 1n, turnId: "target", id: "a" }, { cursor: C + 1n, turnId: "target", id: "b" },
   ] }],
 ]) test(`invalid ${name} does not advance checkpoint`, async () => {
   const transport = new Transport([acceptance(), page(options)]);
@@ -233,15 +233,13 @@ for (const [name, options] of [
 });
 
 test("setup preserves owner prerequisites and does not claim write access", async () => {
-  const transport = new Transport([create(GetOperatingThreadResponseSchema, {
-    channel: { id: "company" }, capabilities: [{ service: "crm", status: "unavailable",
-      missingRequirements: ["Connect CRM"], missingRequirementStates: [{ service: "crm",
-        reasonCode: "connection_missing", remediationRef: "settings/integrations" }] }],
+  const transport = new Transport([create(GetThreadResponseSchema, {
+    thread: { id: "company" }, setup: { accessible: false, missingRequirements: ["Connect CRM"] },
   })]);
   const report = await client(transport).tasks.checkSetup({ channelId: "company" });
   assert.equal(report.status, "needs_attention");
   assert.equal(report.writeAccess, "not_checked");
-  assert.equal(report.capabilities[0].missingRequirementStates[0].reasonCode, "connection_missing");
+  assert.equal(report.capabilities[0].missingRequirements[0], "Connect CRM");
   assert.equal(transport.calls.length, 1);
 });
 
@@ -255,13 +253,13 @@ test("setup failure has actionable grants guidance and support reference", async
 });
 
 test("setup reports owner model availability", async () => {
-  const transport = new Transport([create(GetOperatingThreadResponseSchema, {
-    channel: { id: "company" }, defaultModel: { provider: "fixture", model: "chosen",
-      ready: false, unavailableReason: "grant_missing" },
+  const transport = new Transport([create(GetThreadResponseSchema, {
+    thread: { id: "company" }, setup: { accessible: true, defaultModel: { provider: "fixture", model: "chosen",
+      ready: false } },
   })]);
   const report = await client(transport).tasks.checkSetup({ channelId: "company" });
   assert.equal(report.status, "needs_attention");
-  assert.equal(report.defaultModel.unavailableReason, "grant_missing");
+  assert.equal(report.defaultModel.ready, false);
   assert.equal(report.modelSelection, undefined);
 });
 
@@ -282,9 +280,9 @@ test("visible final answer does not scan unrelated old history", async () => {
 });
 
 test("selected ready model is not blocked by unavailable default", async () => {
-  const transport = new Transport([create(GetOperatingThreadResponseSchema, {
-    channel: { id: "company" }, defaultModel: { provider: "fixture", model: "default", ready: false },
-    modelSelection: { provider: "fixture", model: "chosen" }, availableModels: [{ provider: "fixture", model: "chosen", ready: true }],
+  const transport = new Transport([create(GetThreadResponseSchema, {
+    thread: { id: "company" }, setup: { accessible: true, defaultModel: { provider: "fixture", model: "default", ready: false },
+    selection: { provider: "fixture", model: "chosen" }, availableModels: [{ provider: "fixture", model: "chosen", ready: true }] },
   })]);
   const report = await client(transport).tasks.checkSetup({ channelId: "company" });
   assert.equal(report.status, "accessible");
@@ -293,9 +291,9 @@ test("selected ready model is not blocked by unavailable default", async () => {
 });
 
 for (const explicitSelection of [false, true]) test(`setup rejects an absent execution route (${explicitSelection ? "removed selection" : "no default"})`, async () => {
-  const transport = new Transport([create(GetOperatingThreadResponseSchema, {
-    channel: { id: "company" },
-    ...(explicitSelection ? { modelSelection: { provider: "fixture", model: "removed" } } : {}),
+  const transport = new Transport([create(GetThreadResponseSchema, {
+    thread: { id: "company" },
+    setup: { accessible: true, ...(explicitSelection ? { selection: { provider: "fixture", model: "removed" } } : {}) },
   })]);
   const report = await client(transport).tasks.checkSetup({ channelId: "company" });
   assert.equal(report.status, "needs_attention");
@@ -311,7 +309,7 @@ test("parser failures propagate without changing completion", async () => {
 });
 
 test("invalid acceptance stays unacknowledged and requires explicit replay", async () => {
-  const transport = new Transport([create(SubmitOperatingMessageResponseSchema)]);
+  const transport = new Transport([create(SubmitTaskResponseSchema)]);
   const task = await prepare(client(transport));
   await assert.rejects(task.submit(), error => error instanceof DeixicError && error.kind === "protocol");
   assert.equal((await task.result()).status, "unacknowledged");

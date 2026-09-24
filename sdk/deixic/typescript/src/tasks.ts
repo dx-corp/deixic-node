@@ -3,6 +3,7 @@ import {
   toBinary,
 } from "@bufbuild/protobuf";
 import {
+  MessageRole,
   OperatingCapabilityStateSchema,
   OperatingModelSelectionSchema,
   InferenceProviderTargetSchema,
@@ -21,9 +22,9 @@ import {
   type OperatingThreadEvent,
   type OperatingThreadTurn,
   type ListOperatingThreadEventsResponse,
-} from "../../../../gen/ts/console/v1/console_pb.js";
-import type { MaestroProductClient } from "../../../maestro/typescript/src/client.js";
-import { MaestroProductError } from "../../../maestro/typescript/src/errors.js";
+} from "./protocol.js";
+import type { PublicClient } from "./client.js";
+import { PublicError } from "./errors.js";
 
 const MAX_CURSOR = 9_223_372_036_854_775_807n;
 
@@ -68,7 +69,7 @@ export type TaskResult =
   })
   | (TaskResultBase & { status: "prepared" | "unacknowledged" | "responded" | "failed" | "interrupted" })
   | (TaskResultBase & { status: "waiting"; reason?: string })
-  | (TaskResultBase & { status: "unfinished"; reason?: string; error?: MaestroProductError });
+  | (TaskResultBase & { status: "unfinished"; reason?: string; error?: PublicError });
 
 export interface WaitTaskOptions {
   /** Observation budget in milliseconds. Expiry never interrupts remote work. */
@@ -86,7 +87,7 @@ export interface SetupCheck {
   channelId: string;
   capabilities: OperatingCapabilityState[];
   nextAction: string;
-  error?: MaestroProductError;
+  error?: PublicError;
   modelSelection?: OperatingModelSelection;
   defaultModel?: InferenceProviderTarget;
   selectedModel?: InferenceProviderTarget;
@@ -94,7 +95,7 @@ export interface SetupCheck {
 }
 
 export class TasksClient {
-  constructor(private readonly client: MaestroProductClient, private readonly baseUrl: string) {}
+  constructor(private readonly client: PublicClient, private readonly baseUrl: string) {}
 
   async prepare(input: PrepareTaskInput): Promise<Task> {
     const task = new Task(this.client, {
@@ -142,29 +143,28 @@ export class TasksClient {
     const channelId = identity(input.channelId, "channelId");
     try {
       const thread = await this.client.threads.get({ channelId, limit: 1, signal: input.signal });
-      if (thread.channel?.id !== channelId) throw protocol("Setup lookup omitted or changed the channel identity");
-      const capabilities = thread.capabilities.map(item => clone(OperatingCapabilityStateSchema, item));
-      if (thread.channel.capabilityState) capabilities.push(clone(OperatingCapabilityStateSchema, thread.channel.capabilityState));
-      const missing = capabilities.some(item => item.missingRequirements.length || item.missingRequirementStates.length);
-      const selection = thread.modelSelection;
+      if (thread.thread?.id !== channelId) throw protocol("Setup lookup omitted or changed the channel identity");
+      const capabilities = thread.setup ? [clone(OperatingCapabilityStateSchema, thread.setup)] : [];
+      const missing = !thread.setup?.accessible || capabilities.some(item => item.missingRequirements.length);
+      const selection = thread.setup?.selection;
       const selected = selection && (selection.provider || selection.model)
-        ? thread.availableModels.find(item => item.provider === selection.provider && item.model === selection.model)
-        : thread.defaultModel;
-      // Platform deliberately omits both the catalog and default target when
-      // managed inference is unavailable. An explicit selection that no longer
+        ? thread.setup?.availableModels.find(item => item.provider === selection.provider && item.model === selection.model)
+        : thread.setup?.defaultModel;
+      // Platform omits both the catalog and default target when
+      // model access is unavailable. An explicit selection that no longer
       // appears in the catalog is unavailable for the same reason.
       const unavailableModel = selected === undefined || !selected.ready;
       return {
         status: missing || unavailableModel ? "needs_attention" : "accessible", channelId, capabilities, writeAccess: "not_checked",
         nextAction: missing ? "Resolve the reported workspace prerequisites" : unavailableModel
           ? "Check the reported model availability in workspace settings" : "Submit a task to check execution and write access",
-        ...(thread.modelSelection ? { modelSelection: clone(OperatingModelSelectionSchema, thread.modelSelection) } : {}),
-        ...(thread.defaultModel ? { defaultModel: clone(InferenceProviderTargetSchema, thread.defaultModel) } : {}),
+        ...(thread.setup?.selection ? { modelSelection: clone(OperatingModelSelectionSchema, thread.setup?.selection) } : {}),
+        ...(thread.setup?.defaultModel ? { defaultModel: clone(InferenceProviderTargetSchema, thread.setup?.defaultModel) } : {}),
         ...(selected ? { selectedModel: clone(InferenceProviderTargetSchema, selected) } : {}),
       };
     } catch (error) {
-      if (!(error instanceof MaestroProductError)) throw error;
-      const actions: Partial<Record<MaestroProductError["kind"], string>> = {
+      if (!(error instanceof PublicError)) throw error;
+      const actions: Partial<Record<PublicError["kind"], string>> = {
         authentication: "Replace or refresh the expired or invalid credential",
         authorization: "Check the credential's organization and workspace read grants",
         not_found: "Check the channel ID in this workspace",
@@ -182,7 +182,7 @@ export class Task {
   private observing = false;
   private readonly state: TaskCheckpoint;
 
-  constructor(private readonly client: MaestroProductClient, state: TaskCheckpoint,
+  constructor(private readonly client: PublicClient, state: TaskCheckpoint,
     private readonly onCheckpoint?: PrepareTaskInput["onCheckpoint"]) {
     if (onCheckpoint !== undefined && typeof onCheckpoint !== "function") throw validation("onCheckpoint must be callable");
     this.state = { ...state };
@@ -235,7 +235,7 @@ export class Task {
     for (let index = 0; index < maxPages; index += 1) {
       const page = await this.client.threads.get({ channelId: this.state.channelId,
         limit: 200, pageToken, signal: options.signal });
-      if (page.channel?.id && page.channel.id !== this.state.channelId) throw protocol("Thread lookup changed the channel identity");
+      if (page.thread?.id !== this.state.channelId) throw protocol("Thread lookup changed the channel identity");
       const candidate = page.turns.find(item => item.turnId === turnId);
       if (candidate) {
         if (candidate.sequence !== sequence) throw protocol("Thread lookup changed the accepted turn sequence");
@@ -267,7 +267,7 @@ export class Task {
       default: return { ...base, status: "unfinished" };
     }
     const message = messages.get(turn.assistantMessageId);
-    if (!message || message.role !== "assistant" || message.channelId !== this.state.channelId) {
+    if (!message || message.role !== MessageRole.ASSISTANT) {
       throw protocol("Completed turn omitted its linked final assistant message");
     }
     const receipts: OperatingReceipt[] = [];
@@ -302,7 +302,7 @@ export class Task {
           [OperatingThreadWaitingReason.EXTERNAL_RETRY]: OperatingThreadRequestType.EXTERNAL_RETRY,
         };
         const expected = types[turn.waitingReason];
-        return request?.requestType === expected ? request : undefined;
+        return request?.requestKind === expected ? request : undefined;
       }
     }
     return undefined;
@@ -313,11 +313,11 @@ export class Task {
       const cursor = BigInt(this.state.cursor);
       const page = await this.client.events.list({ channelId: this.state.channelId, afterCursor: cursor, signal });
       if (page.resetRequired) {
-        if (!page.threadExecution || page.threadExecution.replayCursor < cursor) {
+        if (!page.snapshot || page.snapshot.replayCursor < cursor) {
           throw protocol("Retention reset omitted a valid owner execution cursor");
         }
         this.event = undefined;
-        this.state.cursor = page.threadExecution.replayCursor.toString();
+        this.state.cursor = page.snapshot.replayCursor.toString();
         await applicationCall(() => this.saveCheckpoint());
         return true;
       }
@@ -365,7 +365,7 @@ export class Task {
         } catch (error) {
           if (error instanceof ApplicationCallbackError) throw error.original;
           if (controller.signal.aborted) break;
-          if (!(error instanceof MaestroProductError) || !["transport", "unavailable"].includes(error.kind)) throw error;
+          if (!(error instanceof PublicError) || !["transport", "unavailable"].includes(error.kind)) throw error;
           if (reconnects >= maxReconnects) return { status: "unfinished", turnId: this.state.turnId, reason: "observation_error", error };
           reconnects += 1;
         }
@@ -429,8 +429,8 @@ function positive(value: number, name: string): number {
   if (!Number.isFinite(value) || value <= 0 || value > 2_147_483_647) throw validation(`${name} must be positive, finite, and within the supported timer range`);
   return value;
 }
-function validation(message: string): MaestroProductError { return new MaestroProductError({ message, kind: "validation", status: 400 }); }
-function protocol(message: string): MaestroProductError { return new MaestroProductError({ message, kind: "protocol" }); }
+function validation(message: string): PublicError { return new PublicError({ message, kind: "validation", status: 400 }); }
+function protocol(message: string): PublicError { return new PublicError({ message, kind: "protocol" }); }
 
 /** Apply an application's schema/parser to a completed answer; parser failures propagate. */
 export function parseTaskResult<T>(result: TaskResult, parser: (body: string) => T): T {
