@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
-import * as pb from "../dist/gen/ts/console/v1/console_pb.js";
+import * as pb from "../dist/sdk/deixic/typescript/src/protocol.js";
 
 const C = 9_007_199_254_740_994n;
 const script = fileURLToPath(import.meta.resolve("@evalops/deixic-sdk/examples/account-brief"));
@@ -29,42 +29,42 @@ async function owner(loseAcceptance) {
     for await (const chunk of request) chunks.push(chunk);
     const data = Buffer.concat(chunks);
     try {
-      assert(request.url.startsWith("/deixic.v1.DeixicService/"));
+      assert(request.url.startsWith("/deixicpublic.v1.DeixicPublicService/"));
       assert.equal(request.headers["content-type"], "application/proto");
       assert.equal(request.headers["connect-protocol-version"], "1");
       assert.equal(request.headers.authorization, "Bearer fixture-secret");
       const input = fromBinary(pb[method + "RequestSchema"], data);
-      assert.equal(input.query.organizationId, "org-fixture");
-      assert.equal(input.query.workspaceId, "ws-fixture");
-      assert.equal(request.headers["x-organization-id"], input.query.organizationId);
-      assert.equal(request.headers["x-workspace-id"], input.query.workspaceId);
-      assert.equal(input.channelId, "company");
+      assert.equal(input.scope.organizationId, "org-fixture");
+      assert.equal(input.scope.workspaceId, "ws-fixture");
+      assert.equal(request.headers["x-organization-id"], input.scope.organizationId);
+      assert.equal(request.headers["x-workspace-id"], input.scope.workspaceId);
+      assert.equal(input.threadId, "company");
       let fields;
       switch (method) {
-        case "SubmitOperatingMessage":
+        case "SubmitTask":
           submissions.push(data);
           assert.equal(input.idempotencyKey, "crm-event-001");
           assert(input.body.includes("Example account"));
           if (operations.has(input.idempotencyKey)) assert.deepEqual(data, operations.get(input.idempotencyKey));
           operations.set(input.idempotencyKey, data);
           if (loseAcceptance && submissions.length === 1) { request.socket.destroy(); return; }
-          fields = { replayCursor: C, acceptedTurn: { turnId: "target", sequence: 2n, state: pb.OperatingTurnState.QUEUED } };
+          fields = { replayCursor: C, acceptedTurn: { turnId: "target", sequence: 2n, state: pb.OperatingTurnState.ACCEPTED } };
           break;
-        case "ListOperatingThreadEvents":
+        case "ListEvents":
           completed = true;
           fields = { nextCursor: C + 1n, events: input.afterCursor < C + 1n ? [{ cursor: C + 1n,
-            turnId: "target", eventId: "completed", kind: pb.OperatingThreadEventKind.TURN_COMPLETED }] : [] };
+            turnId: "target", id: "completed", kind: pb.OperatingThreadEventKind.TURN_COMPLETED }] : [] };
           break;
-        case "GetOperatingThread":
-          fields = { channel: { id: "company" }, defaultModel: { provider: "fixture", model: "fixture", ready: true },
-            turns: [{ turnId: "target", sequence: 2n, state: completed ? pb.OperatingTurnState.COMPLETED : pb.OperatingTurnState.QUEUED,
+        case "GetThread":
+          fields = { thread: { id: "company" }, setup: { accessible: true, defaultModel: { provider: "fixture", model: "fixture", ready: true } },
+            turns: [{ turnId: "target", sequence: 2n, state: completed ? pb.OperatingTurnState.COMPLETED : pb.OperatingTurnState.ACCEPTED,
               assistantMessageId: completed ? "answer" : "" }],
-            messages: completed ? [{ id: "answer", channelId: "company", role: "assistant",
+            messages: completed ? [{ id: "answer", channelId: "company", role: 2,
               body: "Example account: an evidence-linked brief", receiptIds: ["evidence"] }] : [] };
           break;
-        case "GetOperatingReceipt":
+        case "GetReceipt":
           assert.equal(input.receiptId, "evidence");
-          fields = { receipt: { id: "evidence", lifecycleState: pb.ReceiptLifecycleState.VERIFIED } };
+          fields = { receipt: { id: "evidence", state: pb.ReceiptLifecycleState.VERIFIED } };
           break;
         default: throw new Error("unexpected mutation or RPC: " + method);
       }

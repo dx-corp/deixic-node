@@ -2,8 +2,7 @@
 
 `@evalops/deixic-sdk` is the supported TypeScript client for applications that
 submit Deixic tasks, follow durable progress, interrupt work, and approve or
-deny requested actions. It exposes that focused contract without publishing
-Deixic's browser-only API as an application interface.
+deny requested actions. Its top-level client exposes those supported methods.
 
 ## Install
 
@@ -44,34 +43,6 @@ request keeps its original key and body. `task.wait()` follows durable events
 and retrieves the final answer linked to that accepted turn, together with
 its referenced receipts. The lower-level `observeAcceptedTurn` helper remains
 available for callers that own their streaming policy.
-
-## Compliance assessments
-
-`deixic.compliance.assess()` evaluates a versioned control against a record
-fetched from its owning service under the client's fixed organization and
-workspace:
-
-```ts
-const { assessment } = await deixic.compliance.assess({
-  profileId: "dex-production-action-assurance/v1",
-  subjectKind: "tool_execution",
-  subjectId: "tex_123",
-});
-```
-
-The response names each requirement, its `ComplianceFindingStatus` value,
-a reason code and the owner reference. The first profile tags findings with
-the internal `DEX-ACTION-ASSURANCE` control; mapping that control to an
-external framework requires a separately reviewed mapping. Denied actions are `NOT_APPLICABLE`;
-executions without a confirmed succeeded state are `INDETERMINATE`. It includes a
-digest of the exact Tool Execution returned by the owner and declares coverage
-of one requested record. This is a live read. To retain a server-owned
-snapshot, call `deixic.compliance.record()` with the same subject and an
-`idempotencyKey`, then retrieve its `record.id` with `deixic.compliance.get()`.
-Repeating the key returns the first accepted snapshot. The current profile reports
-the independent Audit receipt as indeterminate because Tool Executor has no
-general Audit sink. Do not treat the result as proof of an external state
-change or of every action in a time window.
 
 ## Task handles and setup checks
 
@@ -221,3 +192,17 @@ retains the original Connect failure for advanced diagnostics.
 
 Node.js 20 or later is supported. The client also works in modern browsers
 when the application supplies an appropriate authenticated transport.
+
+## Public protocol boundary
+
+This package includes only the `deixicpublic.v1.DeixicPublicService` contract
+and its standard protobuf dependencies. Read responses expose public thread,
+message, event, setup, and receipt projections. Receipt evidence uses public
+resource references; service ownership and internal execution records are not
+part of this contract. Pagination uses page tokens.
+
+Existing `deixic.task.v1` checkpoints remain readable, including accepted turn
+IDs and decimal-string cursors. Their `channelId` identifies the public thread.
+Python message types are available from `deixic.protocol`; TypeScript exports
+public message types and schemas from the package root. Existing TypeScript
+operating-type names are aliases of these public types.

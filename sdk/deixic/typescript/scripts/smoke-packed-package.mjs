@@ -16,9 +16,9 @@ try {
   const names = new Set(result[0].files.map((file) => file.path));
   assert(names.has("LICENSE"));
   assert(names.has("dist/sdk/deixic/typescript/src/index.js"));
-  assert(names.has("dist/sdk/maestro/typescript/src/client.js"));
-  assert(names.has("dist/gen/ts/console/v1/console_pb.js"));
-  assert(names.has("dist/gen/ts/deixic/v1/deixic_pb.js"));
+  assert(names.has("dist/sdk/deixic/typescript/src/client.js"));
+  assert(names.has("dist/sdk/deixic/typescript/src/protocol.js"));
+  assert(![...names].some(name => name.includes("dist/gen/")));
   assert(names.has("examples/account-brief.mjs"));
   assert(names.has("dist/sdk/deixic/typescript/src/tasks.js"));
 
@@ -60,23 +60,23 @@ const client = createDeixicClient({
   transport: {
     async unary(method, signal, timeout, headers, input) {
       calls += 1;
-      assert.equal(method.parent.typeName, "deixic.v1.DeixicService");
+      assert.equal(method.parent.typeName, "deixicpublic.v1.DeixicPublicService");
       assert.equal(headers.get("Authorization"), "Bearer package-test-key");
-      assert.equal(input.query.organizationId, "org-package-test");
-      assert.equal(input.query.workspaceId, "workspace-package-test");
+      assert.equal(input.scope.organizationId, "org-package-test");
+      assert.equal(input.scope.workspaceId, "workspace-package-test");
       let fields;
-      if (method.name === "SubmitOperatingMessage") {
+      if (method.name === "SubmitTask") {
         assert.equal(input.idempotencyKey, "installed-request");
-        fields = { replayCursor: 9007199254740993n, acceptedTurn: { turnId: "installed-turn", sequence: 2n, state: OperatingTurnState.QUEUED } };
-      } else if (method.name === "ListOperatingThreadEvents") {
+        fields = { replayCursor: 9007199254740993n, acceptedTurn: { turnId: "installed-turn", sequence: 2n, state: OperatingTurnState.ACCEPTED } };
+      } else if (method.name === "ListEvents") {
         completed = true;
         fields = { nextCursor: input.afterCursor };
       } else {
-        assert.equal(method.name, "GetOperatingThread");
-        fields = { replayCursor: 9007199254740993n, channel: { id: "channel-package-test" },
-          turns: [{ turnId: "installed-turn", sequence: 2n, state: completed ? OperatingTurnState.COMPLETED : OperatingTurnState.QUEUED,
+        assert.equal(method.name, "GetThread");
+        fields = { replayCursor: 9007199254740993n, thread: { id: "channel-package-test" },
+          turns: [{ turnId: "installed-turn", sequence: 2n, state: completed ? OperatingTurnState.COMPLETED : OperatingTurnState.ACCEPTED,
             assistantMessageId: completed ? "answer" : "" }],
-          messages: completed ? [{ id: "answer", channelId: "channel-package-test", role: "assistant", body: "Installed result" }] : [] };
+          messages: completed ? [{ id: "answer", channelId: "channel-package-test", role: 2, body: "Installed result" }] : [] };
       }
       return { message: create(method.output, fields) };
     },

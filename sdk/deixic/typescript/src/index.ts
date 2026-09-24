@@ -1,11 +1,11 @@
 import { Code, ConnectError, type Transport } from "@connectrpc/connect";
 
 import {
-  createMaestroProductClient,
-  type MaestroProductAuth,
-  type MaestroProductClient,
-} from "../../../maestro/typescript/src/client.js";
-import { MaestroProductError } from "../../../maestro/typescript/src/errors.js";
+  createPublicClient,
+  type PublicAuth,
+  type PublicClient,
+} from "./client.js";
+import { PublicError } from "./errors.js";
 import { TasksClient } from "./tasks.js";
 
 /** Hosted Deixic API origin used when a client does not provide one. */
@@ -27,14 +27,15 @@ export interface DeixicClientOptions {
   workspaceId: string;
   baseUrl?: string;
   apiKey?: string;
-  auth?: MaestroProductAuth;
+  auth?: PublicAuth;
   fetch?: typeof globalThis.fetch;
   /** Test and server-adapter escape hatch. Product calls remain tenant-bound. */
   transport?: Transport;
 }
 
 /** The typed Deixic client returned by {@link createDeixicClient}. */
-export interface DeixicClient extends MaestroProductClient {
+export interface DeixicClient extends Pick<PublicClient,
+  "scope" | "threads" | "events" | "messages" | "controls" | "receipts"> {
   readonly tasks: TasksClient;
 }
 
@@ -55,12 +56,12 @@ export function createDeixicClient(options: DeixicClientOptions): DeixicClient {
     throw validationError('provide either "apiKey" or "auth", not both');
   }
 
-  const auth: MaestroProductAuth | undefined = apiKey
+  const auth: PublicAuth | undefined = apiKey
     ? { getCredential: () => ({ accessToken: apiKey, tokenType: "Bearer" }) }
     : options.auth;
 
   const baseUrl = checkedBaseUrl(options.baseUrl ?? DEFAULT_DEIXIC_BASE_URL);
-  const client = createMaestroProductClient({
+  const client = createPublicClient({
     baseUrl,
     scope: {
       organizationId: options.organizationId,
@@ -80,7 +81,16 @@ export function createDeixicClient(options: DeixicClientOptions): DeixicClient {
     },
     transport: options.transport,
   });
-  return Object.assign(client, { tasks: new TasksClient(client, baseUrl) });
+  // Enumerate supported SDK facades explicitly.
+  return {
+    scope: client.scope,
+    threads: client.threads,
+    events: client.events,
+    messages: client.messages,
+    controls: client.controls,
+    receipts: client.receipts,
+    tasks: new TasksClient(client, baseUrl),
+  };
 }
 
 export { Task, TasksClient, parseTaskResult } from "./tasks.js";
@@ -101,85 +111,56 @@ function checkedBaseUrl(value: string): string {
   return cleaned;
 }
 
-function validationError(message: string): MaestroProductError {
-  return new MaestroProductError({ message, kind: "validation", status: 400 });
+function validationError(message: string): PublicError {
+  return new PublicError({ message, kind: "validation", status: 400 });
 }
 
 export {
-  observeMaestroAcceptedTurn as observeAcceptedTurn,
-} from "../../../maestro/typescript/src/accepted-turn.js";
+  observePublicAcceptedTurn as observeAcceptedTurn,
+} from "./accepted-turn.js";
 
 export type {
-  MaestroAcceptedTurnAcceptance as AcceptedTurnAcceptance,
-  MaestroAcceptedTurnResult as AcceptedTurnResult,
-  MaestroAcceptedTurnUnfinishedReason as AcceptedTurnUnfinishedReason,
-  MaestroAcceptedTurnWatchOptions as AcceptedTurnWatchOptions,
-  MaestroObserveAcceptedTurnInput as ObserveAcceptedTurnInput,
-} from "../../../maestro/typescript/src/accepted-turn.js";
+  PublicAcceptedTurnAcceptance as AcceptedTurnAcceptance,
+  PublicAcceptedTurnResult as AcceptedTurnResult,
+  PublicAcceptedTurnUnfinishedReason as AcceptedTurnUnfinishedReason,
+  PublicAcceptedTurnWatchOptions as AcceptedTurnWatchOptions,
+  PublicObserveAcceptedTurnInput as ObserveAcceptedTurnInput,
+} from "./accepted-turn.js";
 
 export {
-  MAESTRO_PRODUCT_APP_CONTEXT_HEADER as DEIXIC_APP_CONTEXT_HEADER,
-  MAESTRO_PRODUCT_APP_CONTEXT_MAX_HEADER_CHARS as DEIXIC_APP_CONTEXT_MAX_HEADER_CHARS,
-  encodeMaestroProductAppContextHeader as encodeDeixicAppContextHeader,
-  encodedMaestroProductAppContextHeaderLength as encodedDeixicAppContextHeaderLength,
-} from "../../../maestro/typescript/src/app-context.js";
+  DEIXIC_PUBLIC_APP_CONTEXT_HEADER as DEIXIC_APP_CONTEXT_HEADER,
+  DEIXIC_PUBLIC_APP_CONTEXT_MAX_HEADER_CHARS as DEIXIC_APP_CONTEXT_MAX_HEADER_CHARS,
+  encodePublicAppContextHeader as encodeDeixicAppContextHeader,
+  encodedPublicAppContextHeaderLength as encodedDeixicAppContextHeaderLength,
+} from "./app-context.js";
 
 export {
-  MaestroProductError as DeixicError,
-} from "../../../maestro/typescript/src/errors.js";
+  PublicError as DeixicError,
+} from "./errors.js";
 
 export type {
-  MaestroProductErrorKind as DeixicErrorKind,
-} from "../../../maestro/typescript/src/errors.js";
+  PublicErrorKind as DeixicErrorKind,
+} from "./errors.js";
 
 export type {
-  MaestroGetReceiptInput as GetReceiptInput,
-  MaestroAssessComplianceInput as AssessComplianceInput,
-  MaestroRecordComplianceInput as RecordComplianceInput,
-  MaestroGetComplianceInput as GetComplianceInput,
-  MaestroGetThreadInput as GetThreadInput,
-  MaestroInterruptThreadInput as InterruptThreadInput,
-  MaestroListThreadEventsInput as ListThreadEventsInput,
-  MaestroProductAuth as DeixicAuth,
-  MaestroProductCredential as DeixicCredential,
-  MaestroResolveReceiptInput as ResolveReceiptInput,
-  MaestroRespondToThreadInput as RespondToThreadInput,
-  MaestroSendMessageInput as SendMessageInput,
-  MaestroWatchThreadInput as WatchThreadInput,
-} from "../../../maestro/typescript/src/client.js";
+  PublicGetReceiptInput as GetReceiptInput,
+  PublicGetThreadInput as GetThreadInput,
+  PublicInterruptThreadInput as InterruptThreadInput,
+  PublicListThreadEventsInput as ListThreadEventsInput,
+  PublicAuth as DeixicAuth,
+  PublicCredential as DeixicCredential,
+  PublicResolveReceiptInput as ResolveReceiptInput,
+  PublicRespondToThreadInput as RespondToThreadInput,
+  PublicSendMessageInput as SendMessageInput,
+  PublicWatchThreadInput as WatchThreadInput,
+} from "./client.js";
 
 export {
-  ComplianceFindingStatus,
   OperatingThreadRequestType,
   OperatingThreadResponseAction,
   OperatingThreadWaitingReason,
   OperatingTurnState,
   ReceiptLifecycleState,
-} from "../../../../gen/ts/console/v1/console_pb.js";
+} from "./protocol.js";
 
-export type {
-  AssessComplianceSubjectResponse,
-  ComplianceAssessmentRecord,
-  ComplianceSubjectAssessment,
-  ComplianceRequirementFinding,
-  GetComplianceAssessmentResponse,
-  RecordComplianceAssessmentResponse,
-  GetOperatingReceiptResponse,
-  GetOperatingThreadResponse,
-  InterruptOperatingThreadResponse,
-  ListOperatingThreadEventsResponse,
-  OperatingAttachmentRef,
-  OperatingCapabilityState,
-  OperatingChannel,
-  OperatingModelSelection,
-  OperatingReceipt,
-  OperatingReceiptAction,
-  OperatingThreadEvent,
-  OperatingThreadExecution,
-  OperatingThreadResponse,
-  OperatingThreadTurn,
-  ResolveOperatingReceiptActionResponse,
-  RespondOperatingThreadResponse,
-  SubmitOperatingMessageResponse,
-  WatchOperatingThreadResponse,
-} from "../../../../gen/ts/console/v1/console_pb.js";
+export * from "./protocol.js";

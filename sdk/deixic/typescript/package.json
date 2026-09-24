@@ -29,7 +29,7 @@
     "package.json"
   ],
   "scripts": {
-    "build": "node ../../maestro/typescript/scripts/verify-descriptor-sources.mjs && rm -rf dist && tsc -p tsconfig.json",
+    "build": "rm -rf dist && tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit",
     "test": "npm run build && node --test test/*.test.mjs",
     "check:package": "npm run build && node scripts/check-package-exports.mjs && node scripts/smoke-packed-package.mjs",
