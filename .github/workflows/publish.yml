@@ -1,0 +1,108 @@
+name: Publish Deixic Node SDK
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: New MAJOR.MINOR.PATCH version to publish
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deixic-node-publish-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out public repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Verify projected source and version
+        env:
+          SDK_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          [[ "$SDK_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          receipt = json.loads(Path('.repository-projection.json').read_text())
+          assert receipt['projection'] == 'deixic-node'
+          assert receipt['sourceRepository'] == 'dx-corp/mono'
+          assert receipt['destinationRepository'] == 'dx-corp/deixic-node'
+          assert receipt['publicationEligible'] is True
+          print(f"Projected Mono source: {receipt['sourceSha']}")
+          PY
+          node -e 'const p=require("./sdk/deixic/typescript/package.json"); if(p.repository?.url!=="git+https://github.com/dx-corp/deixic-node.git") process.exit(1)'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+
+      - name: Install npm 11 and package dependencies
+        working-directory: sdk/deixic/typescript
+        run: |
+          npm install --global npm@11
+          npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Build and pack exact release artifact
+        id: pack
+        working-directory: sdk/deixic/typescript
+        env:
+          SDK_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          npm pkg set "version=$SDK_VERSION"
+          npm run check:package
+          npm pack --ignore-scripts --json > "$RUNNER_TEMP/deixic-pack.json"
+          file="$(jq -r '.[0].filename' "$RUNNER_TEMP/deixic-pack.json")"
+          integrity="$(jq -r '.[0].integrity' "$RUNNER_TEMP/deixic-pack.json")"
+          echo "tarball=$GITHUB_WORKSPACE/sdk/deixic/typescript/$file" >> "$GITHUB_OUTPUT"
+          echo "integrity=$integrity" >> "$GITHUB_OUTPUT"
+
+      - name: Audit built public descriptor closure
+        env:
+          TARBALL: ${{ steps.pack.outputs.tarball }}
+        run: node .github/scripts/audit-public-package.mjs "$TARBALL" sdk/deixic/typescript
+
+      - name: Publish through npm trusted publisher
+        env:
+          TARBALL: ${{ steps.pack.outputs.tarball }}
+        run: npm publish "$TARBALL" --ignore-scripts --access public
+
+      - name: Install and audit registry artifact
+        env:
+          SDK_VERSION: ${{ inputs.version }}
+          BUILT_INTEGRITY: ${{ steps.pack.outputs.integrity }}
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          for _ in $(seq 1 120); do
+            if npm view "@evalops/deixic-sdk@$SDK_VERSION" dist.integrity --json > registry-integrity.json 2>/dev/null; then
+              break
+            fi
+            sleep 5
+          done
+          test "$(jq -r . registry-integrity.json)" = "$BUILT_INTEGRITY"
+          npm pack "@evalops/deixic-sdk@$SDK_VERSION" --json > registry-pack.json
+          file="$(jq -r '.[0].filename' registry-pack.json)"
+          node "$GITHUB_WORKSPACE/.github/scripts/audit-public-package.mjs" "$RUNNER_TEMP/$file" "$GITHUB_WORKSPACE/sdk/deixic/typescript"
+          mkdir install && cd install
+          npm init --yes >/dev/null
+          npm install --ignore-scripts --no-audit --no-fund "@evalops/deixic-sdk@$SDK_VERSION"
+          node --input-type=module -e 'const sdk = await import("@evalops/deixic-sdk"); if (typeof sdk.createDeixicClient !== "function") process.exit(1)'
+          echo "Published @evalops/deixic-sdk@$SDK_VERSION from $GITHUB_SHA with integrity $BUILT_INTEGRITY" >> "$GITHUB_STEP_SUMMARY"
