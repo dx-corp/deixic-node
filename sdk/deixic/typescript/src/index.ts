@@ -35,7 +35,7 @@ export interface DeixicClientOptions {
 
 /** The typed Deixic client returned by {@link createDeixicClient}. */
 export interface DeixicClient extends Pick<PublicClient,
-  "scope" | "threads" | "events" | "messages" | "controls" | "receipts"> {
+  "scope" | "threads" | "events" | "messages" | "controls" | "receipts" | "voices"> {
   readonly tasks: TasksClient;
 }
 
@@ -87,6 +87,7 @@ export function createDeixicClient(options: DeixicClientOptions): DeixicClient {
     threads: client.threads,
     events: client.events,
     messages: client.messages,
+    voices: client.voices,
     controls: client.controls,
     receipts: client.receipts,
     tasks: new TasksClient(client, baseUrl),
@@ -152,10 +153,13 @@ export type {
   PublicResolveReceiptInput as ResolveReceiptInput,
   PublicRespondToThreadInput as RespondToThreadInput,
   PublicSendMessageInput as SendMessageInput,
+  PublicVoiceSelection as VoiceSelection,
   PublicWatchThreadInput as WatchThreadInput,
 } from "./client.js";
 
 export {
+  VoiceMode,
+  VoiceTone,
   OperatingThreadRequestType,
   OperatingThreadResponseAction,
   OperatingThreadWaitingReason,

@@ -8,6 +8,9 @@ import {
 import { createClient, type Transport } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
 import {
+  GetVoiceCatalogRequestSchema,
+  SubmitVoicedTaskRequestSchema,
+  type GetVoiceCatalogResponse,
   CodingAcceptanceContractSchema,
   ConsoleQuerySchema,
   GetOperatingReceiptRequestSchema,
@@ -126,11 +129,35 @@ export interface PublicWatchThreadInput {
   signal?: AbortSignal;
 }
 
+/** Ordered IDs only; guidance is resolved by the workspace Settings owner. */
+export interface PublicVoiceSelection {
+  mode: 0 | 1 | 2 | 3;
+  voiceIds?: readonly string[];
+  toneAdjustments?: readonly (1 | 2 | 3)[];
+}
+
+export function snapshotVoiceSelection(value: PublicVoiceSelection): { mode: 0 | 1 | 2 | 3; voiceIds: string[]; toneAdjustments: (1 | 2 | 3)[] } {
+  if (!value || typeof value !== "object" || Array.isArray(value)
+    || Object.keys(value).some(key => !["mode", "voiceIds", "toneAdjustments"].includes(key))
+    || ![0, 1, 2, 3].includes(value.mode)) throw validationError("Invalid voice selection");
+  const ids = value.voiceIds ?? [];
+  const tones = value.toneAdjustments ?? [];
+  // Match the owner's 128-code-point limit without scanning unbounded UTF-16 input.
+  if (!Array.isArray(ids) || ids.length > 4 || new Set(ids).size !== ids.length
+    || ids.some(id => typeof id !== "string" || !id || id.length > 256 || id !== id.trim() || [...id].length > 128)
+    || (value.mode === 2 ? ids.length === 0 : ids.length !== 0)
+    || !Array.isArray(tones) || tones.length > 3 || tones.some(tone => ![1, 2, 3].includes(tone))) {
+    throw validationError("Invalid voice IDs or tone adjustments");
+  }
+  return { mode: value.mode, voiceIds: [...ids], toneAdjustments: [...new Set(tones)].sort() };
+}
+
 export interface PublicSendMessageInput {
   channelId: string;
   body: string;
   /** Caller-owned key. The SDK never creates or replaces it. */
   idempotencyKey: string;
+  voiceSelection?: PublicVoiceSelection;
   continuationTaskId?: string;
   referenceTaskIds?: string[];
   modelSelection?: MessageInitShape<typeof OperatingModelSelectionSchema>;
@@ -191,6 +218,7 @@ export interface PublicClient {
      */
     watch(input: PublicWatchThreadInput): AsyncIterable<WatchOperatingThreadResponse>;
   };
+  voices: { list(input?: { signal?: AbortSignal }): Promise<GetVoiceCatalogResponse> };
   messages: {
     send(input: PublicSendMessageInput): Promise<SubmitOperatingMessageResponse>;
   };
@@ -396,6 +424,16 @@ export function createPublicClient(options: PublicClientOptions): PublicClient {
       },
       watch,
     },
+    voices: {
+      async list(input = {}) {
+        const request = snapshotRequest(GetVoiceCatalogRequestSchema, { scope: fixedScope() });
+        const result = await unary(headers => client.getVoiceCatalog(request, { headers, signal: input.signal }));
+        if (result.scope?.organizationId !== scope.organizationId || result.scope?.workspaceId !== scope.workspaceId) {
+          throw new PublicError({ message: "Voice catalog belongs to a different workspace", kind: "protocol" });
+        }
+        return result;
+      },
+    },
     messages: {
       send(input) {
         const idempotencyKey = required(input.idempotencyKey, "idempotencyKey");
@@ -410,6 +448,16 @@ export function createPublicClient(options: PublicClientOptions): PublicClient {
           codingContract: input.codingAcceptance,
           projectResourceId: input.projectResourceId,
         });
+        if (input.voiceSelection !== undefined) {
+          const voiced = snapshotRequest(SubmitVoicedTaskRequestSchema, {
+            task: request, voiceSelection: snapshotVoiceSelection(input.voiceSelection),
+          });
+          return unary(async headers => {
+            const result = await client.submitVoicedTask(voiced, { headers, signal: input.signal });
+            if (!result.result) throw new PublicError({ message: "Voiced submission omitted its result", kind: "protocol" });
+            return result.result;
+          }, input.appContext);
+        }
         return unary((requestHeaders) => client.submitTask(request, {
           headers: requestHeaders,
           signal: input.signal,

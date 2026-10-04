@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { create } from "@bufbuild/protobuf";
 import {
-  GetThreadResponseSchema,
+  GetThreadResponseSchema, GetVoiceCatalogResponseSchema, SubmitVoicedTaskResponseSchema,
   SubmitTaskResponseSchema,
 } from "../dist/sdk/deixic/typescript/src/protocol.js";
 import {
@@ -46,7 +46,7 @@ test("public client exposes only supported task and thread facades", () => {
     organizationId: "org-a", workspaceId: "workspace-a", apiKey: "sdk-test-key", transport,
   });
   assert.deepEqual(Object.keys(deixic).sort(), [
-    "controls", "events", "messages", "receipts", "scope", "tasks", "threads",
+    "controls", "events", "messages", "receipts", "scope", "tasks", "threads", "voices",
   ]);
   assert.equal("compliance" in deixic, false);
 });
@@ -183,4 +183,72 @@ test("unsupported offset pagination fails before any request", async () => {
   const sdk = createDeixicClient({ organizationId: "org-a", workspaceId: "workspace-a", transport });
   await assert.rejects(async () => sdk.threads.get({ channelId: "thread-a", offset: 1 }), DeixicError);
   assert.equal(transport.calls.length, 0);
+});
+
+
+test("explicit blend uses a separate RPC and snapshots before credential callbacks", async () => {
+  const selection = { mode: 2, voiceIds: ["lead", "support"], toneAdjustments: [3, 1] };
+  const transport = new RecordingTransport(() => create(SubmitVoicedTaskResponseSchema, {
+    result: { acceptedTurn: { turnId: "voiced", sequence: 1n } },
+  }));
+  const sdk = createDeixicClient({ organizationId: "org-a", workspaceId: "workspace-a", transport,
+    auth: { getCredential: () => { selection.voiceIds.reverse(); return { accessToken: "fixture" }; } },
+  });
+  assert.equal((await sdk.messages.send({ channelId: "company", body: "draft", idempotencyKey: "voice-key", voiceSelection: selection })).acceptedTurn.turnId, "voiced");
+  assert.equal(transport.calls[0].method.name, "SubmitVoicedTask");
+  assert.deepEqual(transport.calls[0].input.voiceSelection.voiceIds, ["lead", "support"]);
+  assert.deepEqual(transport.calls[0].input.voiceSelection.toneAdjustments, [1, 3]);
+  assert.equal(transport.calls[0].input.task.idempotencyKey, "voice-key");
+});
+
+test("catalog is scope fenced and voice selections are bounded before I/O", async () => {
+  const transport = new RecordingTransport(() => create(GetVoiceCatalogResponseSchema, { scope: { organizationId: "org-b", workspaceId: "workspace-a" } }));
+  const sdk = createDeixicClient({ organizationId: "org-a", workspaceId: "workspace-a", apiKey: "fixture", transport });
+  await assert.rejects(sdk.voices.list(), error => error.kind === "protocol");
+  for (const selection of [{ mode: 2, voiceIds: [] }, { mode: 2, voiceIds: ["a", "a"] }, { mode: 3, voiceIds: ["a"] }, { mode: 2, voiceIds: ["a", "b", "c", "d", "e"] }, { mode: 9 }]) {
+    assert.throws(() => sdk.messages.send({ channelId: "company", body: "draft", idempotencyKey: "key", voiceSelection: selection }), DeixicError);
+  }
+  assert.equal(transport.calls.length, 1);
+});
+
+test("Unicode voice IDs obey the same character boundary as the owner and Python SDK", async () => {
+  const voiceId = "😀".repeat(128);
+  let credentialReads = 0;
+  const transport = new RecordingTransport(() => create(SubmitVoicedTaskResponseSchema, {
+    result: { acceptedTurn: { turnId: "unicode", sequence: 1n } },
+  }));
+  const sdk = createDeixicClient({ organizationId: "org-a", workspaceId: "workspace-a", transport,
+    auth: { getCredential: () => { credentialReads++; return { accessToken: "fixture" }; } },
+  });
+  await sdk.messages.send({ channelId: "company", body: "draft", idempotencyKey: "unicode-key",
+    voiceSelection: { mode: 2, voiceIds: [voiceId, "support"] } });
+  assert.deepEqual(transport.calls[0].input.voiceSelection.voiceIds, [voiceId, "support"]);
+  assert.equal(credentialReads, 1);
+  assert.throws(() => sdk.messages.send({ channelId: "company", body: "draft", idempotencyKey: "too-long",
+    voiceSelection: { mode: 2, voiceIds: [`${voiceId}😀`] } }), DeixicError);
+  assert.equal(credentialReads, 1);
+  assert.equal(transport.calls.length, 1);
+});
+
+test("voiced authentication replay keeps the original binary request and never falls back", async () => {
+  const { Code, ConnectError } = await import('@connectrpc/connect');
+  const { toBinary } = await import('@bufbuild/protobuf');
+  const selection = { mode: 2, voiceIds: ['lead', 'support'], toneAdjustments: [3] };
+  const bytes = [];
+  const transport = new RecordingTransport(call => {
+    bytes.push(toBinary(call.method.input, call.input));
+    if (bytes.length === 1) throw new ConnectError('expired', Code.Unauthenticated);
+    return create(SubmitVoicedTaskResponseSchema, { result: { acceptedTurn: { turnId: 'turn', sequence: 1n } } });
+  });
+  const sdk = createDeixicClient({ organizationId: 'org-a', workspaceId: 'workspace-a', transport,
+    auth: { getCredential: () => ({ accessToken: 'old', subject: 'user' }),
+      refreshCredential: () => { selection.voiceIds.reverse(); return { accessToken: 'new', subject: 'user' }; } },
+  });
+  await sdk.messages.send({ channelId: 'company', body: 'draft', idempotencyKey: 'key', voiceSelection: selection });
+  assert.deepEqual(bytes[0], bytes[1]);
+  assert.deepEqual(transport.calls.map(call => call.method.name), ['SubmitVoicedTask', 'SubmitVoicedTask']);
+  const old = new RecordingTransport(() => { throw new ConnectError('unknown method', Code.Unimplemented); });
+  const oldSdk = createDeixicClient({ organizationId: 'org-a', workspaceId: 'workspace-a', apiKey: 'fixture', transport: old });
+  await assert.rejects(oldSdk.messages.send({ channelId: 'company', body: 'draft', idempotencyKey: 'key', voiceSelection: { mode: 3 } }), DeixicError);
+  assert.deepEqual(old.calls.map(call => call.method.name), ['SubmitVoicedTask']);
 });

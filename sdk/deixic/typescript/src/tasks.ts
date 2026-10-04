@@ -23,14 +23,15 @@ import {
   type OperatingThreadTurn,
   type ListOperatingThreadEventsResponse,
 } from "./protocol.js";
-import type { PublicClient } from "./client.js";
+import { snapshotVoiceSelection, type PublicClient, type PublicVoiceSelection } from "./client.js";
 import { PublicError } from "./errors.js";
 
 const MAX_CURSOR = 9_223_372_036_854_775_807n;
 
 /** JSON-safe request and observation coordinates; never authorization or completion. */
 export interface TaskCheckpoint {
-  schema: "deixic.task.v1";
+  schema: "deixic.task.v1" | "deixic.task.v2";
+  voiceSelection?: PublicVoiceSelection;
   organizationId: string;
   workspaceId: string;
   baseUrl: string;
@@ -45,6 +46,7 @@ export interface TaskCheckpoint {
 }
 
 export interface PrepareTaskInput {
+  voiceSelection?: PublicVoiceSelection;
   channelId: string;
   body: string;
   idempotencyKey: string;
@@ -99,7 +101,9 @@ export class TasksClient {
 
   async prepare(input: PrepareTaskInput): Promise<Task> {
     const task = new Task(this.client, {
-      schema: "deixic.task.v1", ...this.client.scope, baseUrl: this.baseUrl,
+      schema: input.voiceSelection === undefined ? "deixic.task.v1" : "deixic.task.v2",
+      ...(input.voiceSelection === undefined ? {} : { voiceSelection: snapshotVoiceSelection(input.voiceSelection) }),
+      ...this.client.scope, baseUrl: this.baseUrl,
       channelId: identity(input.channelId, "channelId"), body: body(input.body),
       idempotencyKey: identity(input.idempotencyKey, "idempotencyKey"),
       projectResourceId: input.projectResourceId === undefined || input.projectResourceId === ""
@@ -117,9 +121,10 @@ export class TasksClient {
   resume(checkpoint: TaskCheckpoint, options: Pick<PrepareTaskInput, "onCheckpoint"> = {}): Task {
     const fields = ["schema", "organizationId", "workspaceId", "baseUrl", "channelId", "body",
       "idempotencyKey", "projectResourceId", "submission", "turnId", "sequence", "cursor"];
+    if (checkpoint?.schema === "deixic.task.v2") fields.push("voiceSelection");
     if (!checkpoint || typeof checkpoint !== "object"
       || Object.keys(checkpoint).sort().join(",") !== fields.sort().join(",")
-      || checkpoint.schema !== "deixic.task.v1") throw validation("Invalid task checkpoint fields or schema");
+      || !["deixic.task.v1", "deixic.task.v2"].includes(checkpoint.schema)) throw validation("Invalid task checkpoint fields or schema");
     if (checkpoint.organizationId !== this.client.scope.organizationId
       || checkpoint.workspaceId !== this.client.scope.workspaceId
       || checkpoint.baseUrl !== this.baseUrl) throw validation("Checkpoint belongs to a different tenant or Platform URL");
@@ -136,7 +141,7 @@ export class TasksClient {
       || checkpoint.turnId !== "" || sequence !== 0n || cursor !== 0n) {
       throw validation("Invalid submission coordinates");
     }
-    return new Task(this.client, { ...checkpoint }, options.onCheckpoint);
+    return new Task(this.client, copyCheckpoint(checkpoint), options.onCheckpoint);
   }
 
   async checkSetup(input: { channelId: string; signal?: AbortSignal }): Promise<SetupCheck> {
@@ -185,10 +190,10 @@ export class Task {
   constructor(private readonly client: PublicClient, state: TaskCheckpoint,
     private readonly onCheckpoint?: PrepareTaskInput["onCheckpoint"]) {
     if (onCheckpoint !== undefined && typeof onCheckpoint !== "function") throw validation("onCheckpoint must be callable");
-    this.state = { ...state };
+    this.state = copyCheckpoint(state);
   }
 
-  checkpoint(): TaskCheckpoint { return { ...this.state }; }
+  checkpoint(): TaskCheckpoint { return copyCheckpoint(this.state); }
 
   async saveCheckpoint(): Promise<void> { await this.onCheckpoint?.(this.checkpoint()); }
 
@@ -208,6 +213,7 @@ export class Task {
       const accepted = await this.client.messages.send({
         channelId: this.state.channelId, body: this.state.body, idempotencyKey: this.state.idempotencyKey,
         ...(this.state.projectResourceId ? { projectResourceId: this.state.projectResourceId } : {}),
+        ...(this.state.voiceSelection === undefined ? {} : { voiceSelection: snapshotVoiceSelection(this.state.voiceSelection) }),
       });
       const turn = accepted.acceptedTurn;
       if (!turn?.turnId.trim() || turn.turnId !== turn.turnId.trim() || turn.sequence <= 0n
@@ -436,4 +442,12 @@ function protocol(message: string): PublicError { return new PublicError({ messa
 export function parseTaskResult<T>(result: TaskResult, parser: (body: string) => T): T {
   if (result.status !== "completed") throw validation("Only a completed task has a final answer to parse");
   return parser(result.body);
+}
+
+function copyCheckpoint(state: TaskCheckpoint): TaskCheckpoint {
+  if (state.schema === "deixic.task.v2") {
+    if (state.voiceSelection === undefined) throw validation("Voiced checkpoint requires voiceSelection");
+    return { ...state, voiceSelection: snapshotVoiceSelection(state.voiceSelection) };
+  }
+  return { ...state };
 }
