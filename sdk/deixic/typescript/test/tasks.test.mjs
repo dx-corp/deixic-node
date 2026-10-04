@@ -4,7 +4,7 @@ import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError } from "@connectrpc/connect";
 import {
   GetThreadResponseSchema, GetReceiptResponseSchema,
-  SubmitTaskResponseSchema, ListEventsResponseSchema,
+  SubmitTaskResponseSchema, SubmitVoicedTaskResponseSchema, ListEventsResponseSchema,
   OperatingTurnState, OperatingThreadEventKind, OperatingThreadRequestType,
   OperatingThreadWaitingReason,
 } from "../dist/sdk/deixic/typescript/src/protocol.js";
@@ -314,4 +314,25 @@ test("invalid acceptance stays unacknowledged and requires explicit replay", asy
   await assert.rejects(task.submit(), error => error instanceof DeixicError && error.kind === "protocol");
   assert.equal((await task.result()).status, "unacknowledged");
   assert.equal(transport.calls.length, 1);
+});
+
+
+test("v2 checkpoints freeze an ordered blend across mutation, response loss and restart", async () => {
+  const transport = new Transport([new Error("lost response"), create(SubmitVoicedTaskResponseSchema, { result: acceptance() })]);
+  const sdk = client(transport);
+  const selection = { mode: 2, voiceIds: ["lead", "support"], toneAdjustments: [3] };
+  const checkpoints = [];
+  const task = await prepare(sdk, { voiceSelection: selection, onCheckpoint: value => { checkpoints.push(structuredClone(value)); value.voiceSelection.voiceIds.reverse(); } });
+  selection.voiceIds.reverse();
+  task.checkpoint().voiceSelection.voiceIds.reverse();
+  await assert.rejects(task.submit());
+  const saved = checkpoints.at(-1);
+  const resumed = sdk.tasks.resume(JSON.parse(JSON.stringify(saved)));
+  saved.voiceSelection.voiceIds.reverse();
+  await resumed.replay();
+  assert.equal(resumed.checkpoint().schema, "deixic.task.v2");
+  assert.deepEqual(transport.calls[0].input, transport.calls[1].input);
+  assert.deepEqual(transport.calls[1].input.voiceSelection.voiceIds, ["lead", "support"]);
+  assert.equal(transport.calls[1].method, "SubmitVoicedTask");
+  for (const bad of [{ ...resumed.checkpoint(), voiceSelection: undefined }, { ...resumed.checkpoint(), schema: "deixic.task.v1" }, { ...resumed.checkpoint(), voiceSelection: { mode: 2, voiceIds: ["a", "a"] } }]) assert.throws(() => sdk.tasks.resume(bad), DeixicError);
 });
