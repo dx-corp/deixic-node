@@ -3,11 +3,11 @@
   "projection": "deixic-node",
   "projectionSchemaVersion": 1,
   "sourceRepository": "dx-corp/mono",
-  "sourceSha": "5b4fdb8d47e431af15ba78f170b2a4b99774d875",
+  "sourceSha": "fcb4796cdc8ec682819173017c5c8d2c50f6b730",
   "destinationRepository": "dx-corp/deixic-node",
-  "priorProjectedBase": "44386823ce9cac7bdbda26a89f928890a5e5e8d9",
+  "priorProjectedBase": "5067d75b53a88926edf816bfa431a19db313b715",
   "definitionDigest": "1984dfa11c2bd95dd871179573e2ab3783be7a6af86d9bf3cd0d1a3f10b15b86",
-  "toolDigest": "535e3cb77f0b59898e63a5f097fb3308564bafbc",
+  "toolDigest": "4d061573580b6f1387676e7c0edeed284e29c97b",
   "contentDigest": "da30688674427a1208657547a3212a324a286adae79d65c0992770be514afd21",
   "publicationEligible": true
 }
